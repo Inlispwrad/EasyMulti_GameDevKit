@@ -13,7 +13,7 @@ namespace EasyMultiSdk.Networking
             {
                 Success = false,    // TODO:: False for now, go mid-point
                 NatType = "Unknown",
-                PublicIp = null,
+                PublicIp = "",
                 PublicPort = 0
             };
         }

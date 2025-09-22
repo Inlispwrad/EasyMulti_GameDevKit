@@ -33,7 +33,7 @@ public static class LobbyApi
         return new List<HostConfig>();
     }
 
-    public static async Task<HostInfo> GetHostInfoAsync(HostId _hostId)
+    public static async Task<HostInfo> GetHostInfoAsync(string _hostId)
     {
         // TODO:: Request a specific HostInfo from the Lobby Server
         await Task.Delay(10);
@@ -57,7 +57,7 @@ public class RelayInfo
     
 public sealed class HostInfo
 {
-    public HostId HostId { get; set; }
+    public string? HostId { get; set; }
     
     public string GameId { get; set; } = "";
     public byte Capacity { get; set; }
