@@ -1,0 +1,12 @@
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\bin\Debug\net8.0\ClientSdk.deps.json
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\bin\Debug\net8.0\ClientSdk.dll
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\bin\Debug\net8.0\ClientSdk.pdb
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.GeneratedMSBuildEditorConfig.editorconfig
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.AssemblyInfoInputs.cache
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.AssemblyInfo.cs
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.csproj.CoreCompileInputs.cache
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.sourcelink.json
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.dll
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\refint\ClientSdk.dll
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ClientSdk.pdb
+D:\Dev\EasyMulti_GameDevKit\client_sdk\ClientSdk\obj\Debug\net8.0\ref\ClientSdk.dll

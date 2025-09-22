@@ -1,0 +1,15 @@
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\bin\Debug\net8.0\LobbyServer.exe
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\bin\Debug\net8.0\LobbyServer.deps.json
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\bin\Debug\net8.0\LobbyServer.runtimeconfig.json
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\bin\Debug\net8.0\LobbyServer.dll
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\bin\Debug\net8.0\LobbyServer.pdb
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.GeneratedMSBuildEditorConfig.editorconfig
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.AssemblyInfoInputs.cache
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.AssemblyInfo.cs
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.csproj.CoreCompileInputs.cache
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.sourcelink.json
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.dll
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\refint\LobbyServer.dll
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.pdb
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\LobbyServer.genruntimeconfig.cache
+D:\Dev\EasyMulti_GameDevKit\server\LobbyServer\obj\Debug\net8.0\ref\LobbyServer.dll

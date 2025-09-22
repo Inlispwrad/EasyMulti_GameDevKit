@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientSdk", "client_sdk\ClientSdk\ClientSdk.csproj", "{074CD35A-B917-40A7-931F-7BD9B621A05E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LobbyServer", "server\LobbyServer\LobbyServer.csproj", "{6890FF6D-AA64-4117-8A6D-2AAB3D8328E9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tester", "Tester\Tester.csproj", "{E4C4A57E-F198-4255-A5A2-06EEF7777796}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{074CD35A-B917-40A7-931F-7BD9B621A05E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{074CD35A-B917-40A7-931F-7BD9B621A05E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{074CD35A-B917-40A7-931F-7BD9B621A05E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{074CD35A-B917-40A7-931F-7BD9B621A05E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6890FF6D-AA64-4117-8A6D-2AAB3D8328E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6890FF6D-AA64-4117-8A6D-2AAB3D8328E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6890FF6D-AA64-4117-8A6D-2AAB3D8328E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6890FF6D-AA64-4117-8A6D-2AAB3D8328E9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E4C4A57E-F198-4255-A5A2-06EEF7777796}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E4C4A57E-F198-4255-A5A2-06EEF7777796}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E4C4A57E-F198-4255-A5A2-06EEF7777796}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E4C4A57E-F198-4255-A5A2-06EEF7777796}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
