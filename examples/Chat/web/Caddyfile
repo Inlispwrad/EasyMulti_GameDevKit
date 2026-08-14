@@ -1,0 +1,24 @@
+# Serve the browser chat client over HTTPS (wss) and proxy the WebSocket to the relay.
+#
+#   caddy run --config Caddyfile     (from this directory)
+#
+# Then open:  https://localhost:8443/?token=demo-token&room=CODE
+# or create a room: https://localhost:8443/?token=demo-token&host=1
+#
+# 'tls internal' gives a self-signed cert (browser will ask you to trust it) --
+# swap in your real domain + automatic Let's Encrypt for production.
+
+localhost:8443 {
+	tls internal
+
+	# WebSocket -> relay (the page connects to wss://localhost:8443/relay)
+	handle /relay* {
+		reverse_proxy 127.0.0.1:7777
+	}
+
+	# Static files (index.html, easymulti.js)
+	handle {
+		root * .
+		file_server
+	}
+}

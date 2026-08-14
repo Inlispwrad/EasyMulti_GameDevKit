@@ -48,11 +48,17 @@ public sealed class RelayServer
 
         foreach (IRelayTransport transport in _transports)
         {
-            transport.Start(_events);
+            transport.Start(Enqueue);
         }
     }
 
-    /// <summary>Run the relay until <see cref="Stop"/> is called.</summary>
+    /// <summary>
+    /// Run the relay until <see cref="Stop"/> is called. A 1 ms poll keeps forwarding
+    /// latency low: <c>Thread.Sleep(1)</c> resolves to ~1 ms on Linux/macOS, while the
+    /// timeout-based alternatives (<c>SemaphoreSlim.Wait(1)</c>, <c>SpinWait.SpinUntil</c>)
+    /// round up to ~10 ms on macOS. The loop also drives the UDP transports' periodic
+    /// <c>Tick()</c> for retransmits and idle checks.
+    /// </summary>
     public void Run()
     {
         Start();
@@ -69,7 +75,7 @@ public sealed class RelayServer
                 transport.Tick();
             }
 
-            Thread.Sleep(15);
+            Thread.Sleep(1);
         }
     }
 
@@ -81,6 +87,8 @@ public sealed class RelayServer
             transport.Stop();
         }
     }
+
+    private void Enqueue(RelayEvent e) => _events.Enqueue(e);
 
     // ── Event dispatch ────────────────────────────────────────────────────────
 

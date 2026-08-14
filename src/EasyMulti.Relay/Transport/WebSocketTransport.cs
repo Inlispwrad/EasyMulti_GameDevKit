@@ -1,6 +1,5 @@
 #nullable enable
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -19,17 +18,17 @@ public sealed class WebSocketTransport : IRelayTransport
 {
     private readonly int _port;
     private HttpListener? _listener;
-    private ConcurrentQueue<RelayEvent>? _events;
+    private Action<RelayEvent>? _enqueue;
     private readonly object _gate = new();
     private bool _stopped;
 
     public WebSocketTransport(int port) => _port = port;
 
-    public void Start(ConcurrentQueue<RelayEvent> events)
+    public void Start(Action<RelayEvent> enqueue)
     {
-        _events = events;
+        _enqueue = enqueue;
         _listener = StartListener(_port);
-        _ = AcceptLoop(_listener, events);
+        _ = AcceptLoop(_listener, enqueue);
     }
 
     public void Tick()
@@ -85,7 +84,7 @@ public sealed class WebSocketTransport : IRelayTransport
         throw new InvalidOperationException($"端口 {port} 一个前缀都绑不上");
     }
 
-    private static async Task AcceptLoop(HttpListener listener, ConcurrentQueue<RelayEvent> events)
+    private static async Task AcceptLoop(HttpListener listener, Action<RelayEvent> enqueue)
     {
         while (true)
         {
@@ -99,11 +98,11 @@ public sealed class WebSocketTransport : IRelayTransport
                 return; // listener stopped
             }
 
-            _ = HandleContext(context, events);
+            _ = HandleContext(context, enqueue);
         }
     }
 
-    private static async Task HandleContext(HttpListenerContext context, ConcurrentQueue<RelayEvent> events)
+    private static async Task HandleContext(HttpListenerContext context, Action<RelayEvent> enqueue)
     {
         if (!context.Request.IsWebSocketRequest)
         {
@@ -126,14 +125,14 @@ public sealed class WebSocketTransport : IRelayTransport
         }
 
         string address = context.Request.RemoteEndPoint?.ToString() ?? "unknown";
-        var connection = new WebSocketConnection(socketContext.WebSocket, address, events);
+        var connection = new WebSocketConnection(socketContext.WebSocket, address, enqueue);
         await connection.RunAsync().ConfigureAwait(false);
     }
 }
 
 /// <summary>
 /// A single WebSocket client connection. Receive and send run on background pumps;
-/// everything is handed to the relay core through the shared event queue, keeping the
+/// everything is handed to the relay core through the signaling enqueue, keeping the
 /// core single-threaded and lock-free.
 /// </summary>
 public sealed class WebSocketConnection : IRelayConnection
@@ -143,17 +142,17 @@ public sealed class WebSocketConnection : IRelayConnection
     private static int _nextId;
 
     private readonly WebSocket _socket;
-    private readonly ConcurrentQueue<RelayEvent> _events;
+    private readonly Action<RelayEvent> _enqueue;
     private readonly Channel<string> _outbox =
         Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
 
     private readonly System.Diagnostics.Stopwatch _uptime = System.Diagnostics.Stopwatch.StartNew();
     private string? _closeReason;
 
-    public WebSocketConnection(WebSocket socket, string address, ConcurrentQueue<RelayEvent> events)
+    public WebSocketConnection(WebSocket socket, string address, Action<RelayEvent> enqueue)
     {
         _socket = socket;
-        _events = events;
+        _enqueue = enqueue;
         Address = address;
         Id = $"ws-{Interlocked.Increment(ref _nextId)}";
     }
@@ -174,13 +173,13 @@ public sealed class WebSocketConnection : IRelayConnection
 
     public async Task RunAsync()
     {
-        _events.Enqueue(new RelayEvent(RelayEventKind.Connected, this, null, "", DeliveryMode.Reliable));
+        _enqueue(new RelayEvent(RelayEventKind.Connected, this, null, "", DeliveryMode.Reliable));
         Task send = PumpOutboxAsync();
         Task receive = PumpInboxAsync();
         await Task.WhenAny(send, receive).ConfigureAwait(false);
         _outbox.Writer.TryComplete();
         _socket.Dispose();
-        _events.Enqueue(new RelayEvent(
+        _enqueue(new RelayEvent(
             RelayEventKind.Disconnected, this, null,
             _closeReason ?? "连接已关闭", DeliveryMode.Reliable));
     }
@@ -233,7 +232,7 @@ public sealed class WebSocketConnection : IRelayConnection
 
                 string json = Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
                 message.SetLength(0);
-                _events.Enqueue(new RelayEvent(
+                _enqueue(new RelayEvent(
                     RelayEventKind.Message, this, json, "", DeliveryMode.Reliable));
             }
         }

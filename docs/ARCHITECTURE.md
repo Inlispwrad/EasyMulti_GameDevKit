@@ -35,9 +35,11 @@ EasyMulti 分四块：
 
 ## 单线程事件循环
 
-沿用 DevRelay 的模型：所有后台 I/O（WS 泵、UDP 接收循环）只把 `RelayEvent` 塞进一个 `ConcurrentQueue`，主循环每 15ms 排干并分派。于是 `games` / `rooms` / `peers` 三个字典永远只被一个线程碰，无需加锁。
+沿用 DevRelay 的模型：所有后台 I/O（WS 泵、UDP 接收循环）只把 `RelayEvent` 塞进一个 `ConcurrentQueue`，主循环排干并分派。于是 `games` / `rooms` / `peers` 三个字典永远只被一个线程碰，无需加锁。
 
     后台 I/O ──enqueue──▶ ConcurrentQueue<RelayEvent> ──dequeue──▶ Dispatch（主循环）
+
+主循环用 `Thread.Sleep(1)` 驱动，本地实测转发延迟：UDP↔UDP ~5ms、WS↔UDP ~10ms、WS↔WS ~17ms。**踩过的一个坑**（值得记住）：在 macOS 上 `Thread.Sleep(1)` 精确到 ~1.4ms，而 `SemaphoreSlim.Wait(1)` 与 `SpinWait.SpinUntil(…,1ms)` 会取整到 ~10ms——想用超时型等待做「亚毫秒唤醒」反而更慢。生产部署在 Linux 上，行为可能不同，但 `Thread.Sleep(1)` 在两边都够精确、够简单。
 
 ## 可靠 UDP 通道（UdpPeer）
 

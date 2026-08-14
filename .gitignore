@@ -37,3 +37,7 @@ data_*/
 # env / secrets
 .env
 *.local
+
+# locally generated TLS certs (serve.mjs / caddy dev)
+.local-*.pem
+.local-*.key

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EasyMulti Chat</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #111318; color: #e6e6e6; display: flex; height: 100vh; }
+  #sidebar { width: 280px; border-right: 1px solid #2a2d36; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; line-height: 1.6; }
+  #log .sys { color: #8b93a3; }
+  #log .name { color: #7cc7ff; }
+  #log .me .name { color: #8be08b; }
+  #inputbar { display: flex; border-top: 1px solid #2a2d36; }
+  #input { flex: 1; background: #1a1d24; border: 0; color: #e6e6e6; padding: 14px; font: inherit; outline: none; }
+  #send { background: #2f6fed; color: #fff; border: 0; padding: 0 22px; font: inherit; cursor: pointer; }
+  .card { background: #1a1d24; border: 1px solid #2a2d36; border-radius: 8px; padding: 10px 12px; }
+  .label { color: #8b93a3; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .mono { font-size: 13px; }
+  .lat { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; }
+  .lat .v { font-weight: 600; }
+  .ok { color: #7ee787; } .warn { color: #e3b341; } .bad { color: #ff7b72; }
+  #status { font-size: 12px; color: #8b93a3; word-break: break-all; }
+  h1 { font-size: 15px; margin: 0; }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <h1>EasyMulti Chat</h1>
+    <div id="status">连接中…</div>
+    <div class="card">
+      <div class="label">实时延迟 (RTT)</div>
+      <div id="latency"><div class="lat"><span>—</span></div></div>
+    </div>
+    <div class="card">
+      <div class="label">房间成员</div>
+      <div id="players" class="mono">—</div>
+    </div>
+    <div class="card">
+      <div class="label">说明</div>
+      <div class="mono" style="color:#8b93a3">回车发送；每 1s 自动 ping 测延迟。</div>
+    </div>
+  </div>
+  <div id="main">
+    <div id="log"></div>
+    <div id="inputbar">
+      <input id="input" placeholder="输入消息，回车发送…" autocomplete="off" />
+      <button id="send">发送</button>
+    </div>
+  </div>
+
+  <script src="easymulti.js"></script>
+  <script>
+  (function () {
+    const qs = new URLSearchParams(location.search);
+    const isSecure = location.protocol === "https:";
+    const url = qs.get("url") || (isSecure ? ("wss://" + location.host + "/relay") : "ws://" + location.host + "/relay");
+    const token = qs.get("token") || "demo-token";
+    const game = qs.get("game") || "chat";
+    const name = qs.get("name") || "Browser";
+    const room = qs.get("room") || null;
+    const hostMode = qs.get("host") === "1";
+
+    const log = document.getElementById("log");
+    const input = document.getElementById("input");
+    const statusEl = document.getElementById("status");
+    const latencyEl = document.getElementById("latency");
+    const playersEl = document.getElementById("players");
+
+    const client = new EasyMulti.EasyMultiClient({ url, token, gameId: game, playerName: name });
+    const latency = new Map(); // peer -> { rtt, n }
+
+    function sys(msg) { const d = document.createElement("div"); d.className = "sys"; d.textContent = msg; log.appendChild(d); log.scrollTop = log.scrollHeight; }
+    function chatLine(from, text, mine) {
+      const d = document.createElement("div");
+      if (mine) d.className = "me";
+      const n = document.createElement("span"); n.className = "name"; n.textContent = from + ": ";
+      d.appendChild(n); d.appendChild(document.createTextNode(text));
+      log.appendChild(d); log.scrollTop = log.scrollHeight;
+    }
+    function renderLatency() {
+      latencyEl.innerHTML = "";
+      if (latency.size === 0) { latencyEl.innerHTML = '<div class="lat"><span>等待对端…</span></div>'; return; }
+      const rows = [];
+      for (const [peer, v] of latency) rows.push([peer, v.rtt]);
+      rows.sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [peer, rtt] of rows) {
+        const cls = rtt < 50 ? "ok" : (rtt < 120 ? "warn" : "bad");
+        const d = document.createElement("div"); d.className = "lat";
+        d.innerHTML = '<span>' + peer + '</span><span class="v ' + cls + '">' + rtt + " ms</span>";
+        latencyEl.appendChild(d);
+      }
+    }
+
+    client.onRegistered = () => { statusEl.textContent = "已注册为 " + name; if (hostMode) client.createRoom("Chat", 8); else if (room) client.joinRoom(room); else sys("用 ?host=1 建房，或 ?room=CODE 加入"); };
+    client.onRoomCreated = (code) => { statusEl.textContent = "房间码 " + code + "（我建了房）"; sys("房间已创建，房码 " + code); playersEl.textContent = client.roomPlayers.join(", "); };
+    client.onRoomJoined = (code) => { statusEl.textContent = "已加入房间 " + code; playersEl.textContent = client.roomPlayers.join(", "); };
+    client.onPlayersChanged = (players) => { playersEl.textContent = players.join(", "); };
+    client.onFailed = (reason) => { sys("失败: " + reason); statusEl.textContent = "失败: " + reason; };
+    client.onClosed = () => { sys("连接已断开"); statusEl.textContent = "连接已断开"; };
+
+    client.onGameData = (from, data) => {
+      let m; try { m = JSON.parse(data); } catch { return; }
+      if (m.t === "chat") chatLine(m.name, m.text, m.name === name);
+      else if (m.t === "ping") client.sendGameData(JSON.stringify({ t: "pong", id: m.id, sent: m.sent }), from);
+      else if (m.t === "pong") {
+        const rtt = Date.now() - m.sent;
+        latency.set(from, { rtt, n: (latency.get(from)?.n || 0) + 1 });
+        renderLatency();
+      }
+    };
+
+    function sendChat() {
+      const text = input.value.trim();
+      if (!text || client.state !== "inRoom") return;
+      client.sendGameData(JSON.stringify({ t: "chat", name, text, at: Date.now() }));
+      chatLine(name, text, true);
+      input.value = "";
+    }
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+    document.getElementById("send").addEventListener("click", sendChat);
+
+    client.connect();
+    let pingId = 0;
+    setInterval(() => {
+      if (client.state === "inRoom") client.sendGameData(JSON.stringify({ t: "ping", id: ++pingId, sent: Date.now() }));
+      renderLatency(); // also prunes stale rows visually
+    }, 1000);
+  })();
+  </script>
+</body>
+</html>

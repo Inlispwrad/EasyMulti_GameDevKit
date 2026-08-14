@@ -86,6 +86,9 @@ public sealed class UdpPeer
     public long MessagesSent { get; private set; }
     public bool IsClosed => _closed;
 
+    /// <summary>Reliable messages sent but not yet acknowledged. Diagnostic + tests.</summary>
+    public int PendingCount { get { lock (_gate) return _pending.Count; } }
+
     /// <summary>Seconds since the last inbound datagram.</summary>
     public double IdleSeconds => (NowMs() - _lastActivityMs) / 1000.0;
 

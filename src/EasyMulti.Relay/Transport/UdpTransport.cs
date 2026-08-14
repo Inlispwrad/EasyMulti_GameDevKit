@@ -1,6 +1,5 @@
 #nullable enable
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -20,7 +19,7 @@ public sealed class UdpTransport : IRelayTransport
     private readonly int _port;
     private readonly UdpPeerOptions _peerOptions;
     private Socket? _socket;
-    private ConcurrentQueue<RelayEvent>? _events;
+    private Action<RelayEvent>? _enqueue;
     private readonly Dictionary<IPEndPoint, UdpConnection> _connections = new();
     private readonly object _gate = new();
     private volatile bool _stopped;
@@ -31,9 +30,9 @@ public sealed class UdpTransport : IRelayTransport
         _peerOptions = peerOptions ?? new UdpPeerOptions();
     }
 
-    public void Start(ConcurrentQueue<RelayEvent> events)
+    public void Start(Action<RelayEvent> enqueue)
     {
-        _events = events;
+        _enqueue = enqueue;
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
         // A bounded receive timeout lets Stop() signal shutdown without calling
@@ -137,12 +136,12 @@ public sealed class UdpTransport : IRelayTransport
                 return existing;
             }
 
-            var connection = new UdpConnection(endpoint, _socket!, _events!, _peerOptions);
+            var connection = new UdpConnection(endpoint, _socket!, _enqueue!, _peerOptions);
             _connections[endpoint] = connection;
             // Adopt the endpoint as a connection before its first message is processed,
             // so the relay core registers it (the Connected event precedes the Message
             // event because both are enqueued sequentially from this thread).
-            _events!.Enqueue(new RelayEvent(RelayEventKind.Connected, connection, null, "", DeliveryMode.Reliable));
+            _enqueue!(new RelayEvent(RelayEventKind.Connected, connection, null, "", DeliveryMode.Reliable));
             return connection;
         }
     }
@@ -156,14 +155,14 @@ public sealed class UdpTransport : IRelayTransport
 public sealed class UdpConnection : IRelayConnection
 {
     private readonly Socket _socket;
-    private readonly ConcurrentQueue<RelayEvent> _events;
+    private readonly Action<RelayEvent> _enqueue;
     private volatile bool _closed;
 
-    public UdpConnection(IPEndPoint endpoint, Socket socket, ConcurrentQueue<RelayEvent> events, UdpPeerOptions options)
+    public UdpConnection(IPEndPoint endpoint, Socket socket, Action<RelayEvent> enqueue, UdpPeerOptions options)
     {
         Endpoint = endpoint;
         _socket = socket;
-        _events = events;
+        _enqueue = enqueue;
         Address = endpoint.ToString();
         Id = $"udp-{endpoint}";
         Peer = new UdpPeer(
@@ -212,7 +211,7 @@ public sealed class UdpConnection : IRelayConnection
     private void Deliver(byte[] payload, DeliveryMode mode)
     {
         if (_closed) return;
-        _events.Enqueue(new RelayEvent(
+        _enqueue(new RelayEvent(
             RelayEventKind.Message, this, Encoding.UTF8.GetString(payload), "", mode));
     }
 
@@ -220,7 +219,7 @@ public sealed class UdpConnection : IRelayConnection
     {
         if (_closed) return;
         _closed = true;
-        _events.Enqueue(new RelayEvent(
+        _enqueue(new RelayEvent(
             RelayEventKind.Disconnected, this, null, reason, DeliveryMode.Reliable));
     }
 }
