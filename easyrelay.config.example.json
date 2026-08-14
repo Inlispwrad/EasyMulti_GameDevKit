@@ -1,0 +1,14 @@
+{
+  "token": "change-me-to-a-long-random-string",
+  "webSocket": {
+    "enabled": true,
+    "port": 7777
+  },
+  "udp": {
+    "enabled": true,
+    "port": 7777
+  },
+  "maxConnections": 1000,
+  "idleTimeoutMs": 60000,
+  "logLevel": "info"
+}

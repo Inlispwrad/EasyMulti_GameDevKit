@@ -1,0 +1,39 @@
+# .NET build outputs
+bin/
+obj/
+*.user
+*.suo
+*.cache
+project.lock.json
+artifacts/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+
+# IDE
+.vs/
+.idea/
+*.swp
+*.slnx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local relay config (developers keep their own token here)
+easyrelay.config.json
+
+# Godot (consumers often embed the SDK in a Godot project)
+.godot/
+.import/
+export.cfg
+export_credentials.cfg
+*.translation
+.mono/
+data_*/
+
+# env / secrets
+.env
+*.local

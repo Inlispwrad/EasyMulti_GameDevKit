@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>EasyMulti.Relay</RootNamespace>
+    <AssemblyName>easymulti-relay</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Zero third-party dependencies: WebSocket via BCL HttpListener, UDP via BCL Socket. -->
+  <ItemGroup>
+    <ProjectReference Include="../EasyMulti.Protocol/EasyMulti.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>EasyMulti.Protocol</RootNamespace>
+    <!-- Zero third-party dependencies: this assembly only uses the BCL. -->
+  </PropertyGroup>
+
+</Project>

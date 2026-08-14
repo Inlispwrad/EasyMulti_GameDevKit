@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>EasyMulti.Client</RootNamespace>
+    <!-- Zero third-party dependencies; only the BCL, so it drops into any .NET 8 host (incl. Godot C#). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../EasyMulti.Protocol/EasyMulti.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>
