@@ -51,6 +51,7 @@ src/
   EasyMulti.Client/     客户端 SDK（WebSocket / UDP 双传输，host 与 client 共用）
 examples/
   Echo/                 最小 hostCore + client 示例
+  Chat/                 聊天室 + 实时延迟（终端 UDP + 浏览器 WS，含基准工具）
 tests/
   EasyMulti.Tests/      集成测试（WS 与 WS、UDP 与 UDP、WS 与 UDP 互通、鉴权、隔离、分片）
 ```
@@ -59,6 +60,8 @@ tests/
 
 | 文档 | 内容 |
 |---|---|
+| [docs/USAGE.md](docs/USAGE.md) | **上手**：token → 部署 → 客户端内置配置，三步就完 |
+| [docs/BENCHMARK.md](docs/BENCHMARK.md) | 延迟基准：UDP ~5ms、WS↔UDP ~10ms、WS↔WS ~17ms |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | 线协议：消息集合、字段语义、UDP 帧格式 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 设计：传输抽象、事件循环、可靠通道、互通为何免费 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 部署：配置来源、Docker、反向代理、安全边界 |
