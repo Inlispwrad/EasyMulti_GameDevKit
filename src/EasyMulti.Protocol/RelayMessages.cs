@@ -40,6 +40,7 @@ public static class RelayMessageType
     public const string PlayerJoined    = "PLAYER_JOINED";
     public const string PlayerLeft      = "PLAYER_LEFT";
     public const string GameStarted     = "GAME_STARTED";
+    public const string LeaveSuccess    = "LEAVE_SUCCESS";
 }
 
 // ── Client → Server ──────────────────────────────────────────────────────────
@@ -164,6 +165,12 @@ public readonly record struct PlayerLeftMessage(string PlayerName, string[] Play
 public readonly record struct GameStartedMessage
 {
     public string Type => RelayMessageType.GameStarted;
+}
+
+/// <summary>Leave acknowledged; the client is back in the lobby. Empty payload.</summary>
+public readonly record struct LeaveSuccessMessage
+{
+    public string Type => RelayMessageType.LeaveSuccess;
 }
 
 /// <summary>Forwarded game payload with the source player's name. <see cref="Data"/> is identical to what the sender sent.</summary>

@@ -156,6 +156,90 @@ public class RelayIntegrationTests
         Assert.DoesNotContain(beta.Rooms, r => r.Code == code);
     }
 
+    // ── Membership and in-game filtering ──────────────────────────────────────
+
+    [Fact]
+    public void NonMember_CannotSendOrReceive()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+        var outsider = EasyMultiClient.CreateWebSocket(Config("Outsider")); // 留在大厅，不进房
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+        ConnectAndRegister(outsider, relay.WsPort, host, guest, outsider);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom();
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest, outsider);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest, outsider);
+
+        // 房间外的人（大厅）发 GAME_DATA，中继应丢弃，成员收不到。
+        var memberData = new List<(string From, string Data)>();
+        host.GameDataReceived += (from, data) => memberData.Add((from, data));
+        guest.GameDataReceived += (from, data) => memberData.Add((from, data));
+        outsider.SendGameData("intrusion");
+        PollSilence(host, guest, outsider);
+        Assert.Empty(memberData);
+
+        // 房间成员定向发给「非成员名」，也应被丢弃。
+        var outsiderData = new List<(string From, string Data)>();
+        outsider.GameDataReceived += (from, data) => outsiderData.Add((from, data));
+        guest.SendGameData("to-outsider", to: "Outsider");
+        PollSilence(host, guest, outsider);
+        Assert.Empty(outsiderData);
+    }
+
+    [Fact]
+    public void InGameRoom_FilterableAndLeaverIsolated()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+        var watcher = EasyMultiClient.CreateWebSocket(Config("Watcher")); // 留在大厅观察列表
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+        ConnectAndRegister(watcher, relay.WsPort, host, guest, watcher);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom();
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest, watcher);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest, watcher);
+
+        // 开局前：可加入。
+        Pump(() => watcher.Rooms.Any(r => r.Code == code && !r.InGame), 5000, host, guest, watcher);
+        Assert.Contains(watcher.JoinableRooms, r => r.Code == code);
+
+        // 开局后：inGame=true，JoinableRooms 不再包含它。
+        host.StartGame();
+        Pump(() => host.State == EasyMultiState.InGame, 5000, host, guest, watcher);
+        Pump(() => watcher.Rooms.Any(r => r.Code == code && r.InGame), 5000, host, guest, watcher);
+        Assert.DoesNotContain(watcher.JoinableRooms, r => r.Code == code);
+
+        // 开局后离开的人不能再发。
+        guest.LeaveRoom();
+        Pump(() => guest.State == EasyMultiState.Lobby, 5000, host, guest, watcher);
+
+        var hostData = new List<(string From, string Data)>();
+        host.GameDataReceived += (from, data) => hostData.Add((from, data));
+        guest.SendGameData("after-leave");
+        PollSilence(host, guest, watcher);
+        Assert.Empty(hostData);
+
+        // 房主广播，离开的 guest 也收不到。
+        var guestData = new List<(string From, string Data)>();
+        guest.GameDataReceived += (from, data) => guestData.Add((from, data));
+        host.SendGameData("to-all");
+        PollSilence(host, guest, watcher);
+        Assert.Empty(guestData);
+    }
+
     // ── UDP fragmentation ─────────────────────────────────────────────────────
 
     [Fact]
@@ -210,6 +294,21 @@ public class RelayIntegrationTests
         }
 
         Assert.True(done(), $"条件在 {timeoutMs}ms 内未满足");
+    }
+
+    /// <summary>轮询一段时间并保持安静——用于「断言什么都没发生」的反向用例。</summary>
+    private static void PollSilence(params EasyMultiClient[] clients)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 500)
+        {
+            foreach (EasyMultiClient client in clients)
+            {
+                client.Poll();
+            }
+
+            Thread.Sleep(5);
+        }
     }
 
     /// <summary>Runs a relay on ephemeral ports in a background thread.</summary>

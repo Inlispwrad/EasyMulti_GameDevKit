@@ -62,6 +62,9 @@ public sealed class EasyMultiClient : IDisposable
     /// <summary>Current lobby snapshot for this game.</summary>
     public IReadOnlyList<RoomInfo> Rooms => _rooms;
 
+    /// <summary>Rooms still joinable (not yet started). The lobby's "筛选进行中的房间" helper.</summary>
+    public IReadOnlyList<RoomInfo> JoinableRooms => _rooms.Where(r => !r.InGame).ToList();
+
     public string? HostName => _roomPlayers.Count > 0 ? _roomPlayers[0] : null;
 
     public bool IsHost => _roomPlayers.Count > 0 && _roomPlayers[0] == Config.PlayerName;
@@ -74,6 +77,7 @@ public sealed class EasyMultiClient : IDisposable
     public event Action<string>? RoomJoined;
     public event Action<IReadOnlyList<string>>? RoomPlayersChanged;
     public event Action? GameStarted;
+    public event Action? LeftRoom;
     public event Action<string, string>? GameDataReceived;
     public event Action<string>? Failed;
 
@@ -209,6 +213,13 @@ public sealed class EasyMultiClient : IDisposable
             case RelayMessageType.GameStarted:
                 State = EasyMultiState.InGame;
                 GameStarted?.Invoke();
+                break;
+
+            case RelayMessageType.LeaveSuccess:
+                State = EasyMultiState.Lobby;
+                GameCode = null;
+                _roomPlayers.Clear();
+                LeftRoom?.Invoke();
                 break;
 
             case RelayMessageType.GameData:

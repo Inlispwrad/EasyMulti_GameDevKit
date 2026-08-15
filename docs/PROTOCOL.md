@@ -89,7 +89,9 @@
 | GAME_DATA.to | string | 否 | 缺省 | 缺省→广播给同房间其他成员；给定→定向给该玩家名 |
 
 - `START_GAME`：仅 Host（`players[0]`）可发。中继**不**施加人数/准备条件（那是游戏逻辑），只把房间标记为 `inGame`（阻止新加入、大厅可见）。
-- `GAME_DATA` 广播与定向都不回显给发送者。
+- `GAME_DATA` 只受理房间成员发的（非成员发直接丢弃），也只转发给房间成员。广播与定向都不回显给发送者。
+- `LEAVE_ROOM` 成功后服务端回 `LEAVE_SUCCESS`，客户端据此回到大厅。
+- `ROOM_LIST` / `LOBBY_UPDATED` 里每个房间带 `inGame` 字段，客户端可按它筛「进行中」的房间；`START_GAME` 之后 `JOIN_ROOM` 会被 `game_already_started` 拒掉。
 
 ### Server → Client
 
@@ -99,6 +101,7 @@
     { "type": "PLAYER_JOINED", "playerName": "Tester1", "players": ["Host", "Tester1"] }
     { "type": "PLAYER_LEFT", "playerName": "Tester1", "players": ["Host"] }
     { "type": "GAME_STARTED" }
+    { "type": "LEAVE_SUCCESS" }
     { "type": "GAME_DATA", "from": "Tester1", "data": "<base64>" }
 
 - 房间码由服务端生成：6 位大写字母 + 数字。

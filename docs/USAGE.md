@@ -123,7 +123,7 @@ EasyMultiClient（C#）常用成员：
 | GameStarted | 房主发了 StartGame |
 | GameDataReceived(from, data) | 收到对局数据 |
 
-属性：State、GameCode、RoomPlayers、Rooms、HostName、IsHost。
+属性：State、GameCode、RoomPlayers、Rooms、JoinableRooms（= 未开局的可加入房间，等价于 Rooms.Where(r => !r.InGame)）、HostName、IsHost。
 
 ## 常见问题
 
@@ -132,3 +132,5 @@ EasyMultiClient（C#）常用成员：
 - **大消息？** UDP 下超过 ~1180 字节的可靠消息自动分片；WebSocket 走 TCP 没这个限制。高频状态建议 SendGameData(..., mode: Unreliable)（仅 UDP 生效，WS 自动退化为可靠）。
 - **房主掉线了怎么办？** 中继自动把 players[0] 变成新 Host，但**对局状态不迁移**——那是你 HostCore 自己的事。
 - **一台中继能跑几个游戏？** 随便多少，用 gameId 隔开。部署一次，所有小游戏共用。
+- **大厅怎么筛「进行中」的房间？** 每个房间带 inGame 字段；用 Rooms.Where(r => !r.InGame) 或 JoinableRooms 只显示可加入的。开局后的房间别人加不进（会被 game_already_started 拒掉）。
+- **房间外的人能往房里发消息吗？** 不能。中继只受理房间成员发的 GAME_DATA，也只转发给房间成员；离开房间的人发不进去、也收不到。

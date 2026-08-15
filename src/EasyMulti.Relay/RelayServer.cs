@@ -341,6 +341,7 @@ public sealed class RelayServer
             }
         }
 
+        Send(connection, new LeaveSuccessMessage());
         Send(connection, RoomsPayload(state.GameId!, RelayMessageType.RoomList));
         BroadcastLobbyUpdated(state.GameId!);
     }
@@ -349,7 +350,8 @@ public sealed class RelayServer
     {
         if (state.Location != Loc.InRoom || state.GameCode is null) return;
         if (!Rooms(state.GameId!).TryGetValue(state.GameCode, out Room? room)) return;
-        if (room.HostConn != connection) return; // host only
+        if (!IsMember(room, connection)) return;      // 只有房间成员能开局
+        if (room.HostConn != connection) return;      // 且只有房主能开
 
         room.InGame = true;
         Log($"Game started in room {state.GameCode}");
@@ -365,6 +367,7 @@ public sealed class RelayServer
     {
         if (state.Location != Loc.InRoom || state.GameCode is null) return;
         if (!Rooms(state.GameId!).TryGetValue(state.GameCode, out Room? room)) return;
+        if (!IsMember(room, connection)) return; // 硬约束：只有房间成员能发 GAME_DATA
         if (!RelayCodec.TryDeserialize<GameDataRequest>(json, out GameDataRequest req)) return;
 
         string sender = state.PlayerName ?? "Unknown";
@@ -445,6 +448,9 @@ public sealed class RelayServer
     }
 
     private static string[] Names(Room room) => room.Players.Select(p => p.Name).ToArray();
+
+    private static bool IsMember(Room room, IRelayConnection connection) =>
+        room.Players.Any(p => p.Conn == connection);
 
     private void Send(IRelayConnection connection, object message, DeliveryMode mode = DeliveryMode.Reliable) =>
         connection.Send(RelayCodec.Serialize(message), mode);
