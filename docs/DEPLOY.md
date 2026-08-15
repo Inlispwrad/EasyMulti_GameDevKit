@@ -35,7 +35,7 @@
 ## Docker
 
     docker build -t easymulti .
-    docker run -d       -p 7777:7777/tcp       -p 7777:7777/udp       -e EASYMULTI_TOKEN=$(openssl rand -hex 32)       --restart unless-stopped       easymulti
+    docker run -d --restart unless-stopped -p 7777:7777/tcp -p 7777:7777/udp -e EASYMULTI_TOKEN=$(openssl rand -hex 32) easymulti
 
 ## 反向代理（wss://）
 

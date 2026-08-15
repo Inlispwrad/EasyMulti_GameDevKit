@@ -1,13 +1,13 @@
 # EasyMulti 使用文档
 
-给小型游戏开发者。**你的负担只有三件事**：生成一个 token → 把中继扔到公网服务器 → 客户端里内置 token 和服务器地址。之后你就只写客户端和 HostCore，中继再也不用管。
+给小型游戏开发者。**你的负担只有三件事**：生成一个 token → 启动中继（传 token）→ 客户端里内置 token 和服务器地址。之后就只写客户端和 HostCore，中继不用管。
 
 ## 概念速览（30 秒）
 
 - **中继只转发数据**，不跑任何游戏逻辑。谁当房主、谁算伤害、谁发牌，都是你自己的 HostCore 的事。
 - **gameId** = 游戏命名空间。一台中继服务多个游戏，不同 gameId 的房间互不可见。
 - **每个 Host 就是一个房间**。房主开房，其他人加入。按 gameId 拉房间列表，天然就是游戏大厅。
-- **players[0] 恒是房主**。房主跑了权威逻辑，玩家把输入定向发给房主，房主把结果广播回来。
+- **players[0] 恒是房主**。房主跑权威逻辑，玩家把输入定向发给房主，房主把结果广播回来。
 - **UDP 和 WebSocket 天然互通**：桌面/主机用 UDP（Steam / NS 高效路径），网页用 WebSocket，两边可以进同一个房间。
 
 ## 第 1 步：生成 token
@@ -18,23 +18,17 @@ token 是这台中继的「门禁密码」，谁有它谁能连。只挡爬虫�
 
 记下来，第 2 步和第 3 步都要用。不要提交进代码仓库（用环境变量/构建注入）。
 
-## 第 2 步：把中继部署到公网服务器
+## 第 2 步：启动中继（传 token）
 
-假设服务器装了 Docker，且放行了 UDP 与 TCP 的 7777 端口。
+中继就是一个进程，给它一个 token 就能跑：
 
-    git clone https://github.com/Inlispwrad/EasyMulti_GameDevKit.git
-    cd EasyMulti_GameDevKit
-    docker build -t easymulti .
-    docker run -d --name easymulti --restart unless-stopped       -p 7777:7777/tcp -p 7777:7777/udp       -e EASYMULTI_TOKEN=你的token       easymulti
+    EASYMULTI_TOKEN=你的token dotnet run --project src/EasyMulti.Relay -c Release
 
-完事。之后中继就在后台跑，重启自动拉起，**再也不用管它**。
+仓库里带了 Dockerfile，容器化就是 build + run 各一条（见 [DEPLOY.md](DEPLOY.md)）。跑起来之后重启自动拉起，**再也不用管它**。
 
-没有 Docker 就装 .NET 8 SDK，直接跑：
+**怎么把这个进程放到你自己的服务器 / 云主机 / 内网机器上，是你自己的事**——买机器、配域名、开防火墙都不在本项目范围。我们只负责中继进程本身。
 
-    export EASYMULTI_TOKEN=你的token
-    dotnet run --project src/EasyMulti.Relay -c Release
-
-> 网页（浏览器）要连 wss，需要在前面加一层反代终结 TLS（中继自己只跑明文 ws）。见 [DEPLOY.md](DEPLOY.md)「反向代理」。
+> 网页要连 wss（HTTPS 页面只允许 wss），而中继只跑明文 ws：TLS 终结由你在前面加一层反代，见 [DEPLOY.md](DEPLOY.md)「反向代理」。
 
 ## 第 3 步：客户端内置 token 和服务器地址
 
@@ -49,14 +43,13 @@ token 是这台中继的「门禁密码」，谁有它谁能连。只挡爬虫�
         gameId: "my-game",
         playerName: "Alice"));
 
-    client.Registered += () => client.JoinRoom("ABC123");       // 或先 ListRooms 列大厅
+    client.Registered += () => client.JoinRoom("ABC123");       // 或先 RefreshRooms 列大厅
     client.RoomJoined += code => Console.WriteLine("已加入 " + code);
     client.GameDataReceived += (from, data) => {
         // data 是你游戏层定义的字符串（例如 base64(JSON)），中继不碰它
-        // 注意：这里收到的可能来自房主，也可能来自其他玩家（广播）
     };
 
-    client.Connect("你的服务器域名", 7777);
+    client.Connect("你的服务器地址", 7777);
 
     while (true) {           // Godot 里放 _Process / _PhysicsProcess
         client.Poll();       // 每帧调一次，驱动收发
@@ -82,7 +75,7 @@ token 是这台中继的「门禁密码」，谁有它谁能连。只挡爬虫�
         // 只发某个人：   client.SendGameData("结果", to: from)
     };
 
-    client.Connect("你的服务器域名", 7777);
+    client.Connect("你的服务器地址", 7777);
     while (true) { client.Poll(); Thread.Sleep(1); }
 
 Host 可以是「某个玩家的客户端顺手开房」，也可以是「独立服务器进程」——代码完全一样。
