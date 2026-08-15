@@ -77,6 +77,7 @@
     { "type": "CREATE_ROOM", "roomName": "Jin's Test", "maxPlayers": 4 }
     { "type": "JOIN_ROOM", "gameCode": "ABC123" }
     { "type": "LEAVE_ROOM" }
+    { "type": "KICK", "playerName": "Tester2" }
     { "type": "START_GAME" }
     { "type": "GAME_DATA", "data": "<base64>" }
     { "type": "GAME_DATA", "to": "Tester2", "data": "<base64>" }
@@ -110,15 +111,16 @@
 - `players[]` 第一个元素恒为当前 Host；Host 离开时 `players[0]` 自动成为新 Host（对局状态不迁移）。
 - `JOIN_FAILED.reason` ∈ `room_not_found` / `room_full` / `game_already_started` / `name_taken`。
 
-## 掉线重连
+## 掉线重连与移除
 
-成员掉线**不会立刻被移除**，座位保留 `ReconnectGraceMs`（默认 30s，可配）。期间：
+中继**不做时间逻辑**，只认名单：`players[]` 就是名单，名字在名单上就能进来。掉线的人名字仍在名单里（座位保留），直到被移除。
 
-1. 中继向其他成员发 `PLAYER_DISCONNECTED`（该成员仍在 `players[]` 里，只是标记为「掉线」）。
-2. 掉线者用**同一个 playerName** 重新 REGISTER，再发 `JOIN_ROOM(房码)` → 中继发现同名保留座位，直接让他坐回去（即便房间已 `inGame`），回 `JOIN_SUCCESS` +（若已开局）`GAME_STARTED`，并向其他人发 `PLAYER_RECONNECTED`。
-3. 宽限期过仍未重连 → 座位真正释放，发 `PLAYER_LEFT`。
+1. 成员掉线 → 中继发 `PLAYER_DISCONNECTED`（他仍在 `players[]`，标记为「掉线」）。
+2. 掉线者用**同一个 playerName** 重新 REGISTER + `JOIN_ROOM(房码)` → 中继发现同名保留座位，直接坐回（即便已 `inGame`），回 `JOIN_SUCCESS` +（若已开局）`GAME_STARTED`，并向其他人发 `PLAYER_RECONNECTED`。
+3. 移除（谁真走了、什么时候踢）是 **Host 逻辑**：房主发 `KICK { playerName }`，中继把该名字从名单移除、发 `PLAYER_LEFT`（在线者同时被送回大厅）。成员自己 `LEAVE_ROOM` 也一样移除。
 
 > 同名即身份：任何持有 token 的人都能用同一个名字顶替（与共享 token 的安全模型一致，防爬虫不防冒名）。
+> 房主掉线后座位同样保留、不自动换人——要不要换房主由 Host 层决定（例如让其他人 KICK 掉旧房主）。
 
 ---
 

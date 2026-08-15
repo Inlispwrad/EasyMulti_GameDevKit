@@ -110,6 +110,9 @@ public sealed class EasyMultiClient : IDisposable
 
     public void LeaveRoom() => Send(new LeaveRoomRequest());
 
+    /// <summary>Remove a member from the room. Host only.</summary>
+    public void Kick(string playerName) => Send(new KickRequest(playerName));
+
     /// <summary>Mark the room as in-game. Host only.</summary>
     public void StartGame() => Send(new StartGameRequest());
 

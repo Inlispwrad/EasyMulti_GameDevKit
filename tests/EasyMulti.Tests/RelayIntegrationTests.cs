@@ -289,6 +289,36 @@ public class RelayIntegrationTests
         guest2.Dispose();
     }
 
+    [Fact]
+    public void HostCanKickMember()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom();
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest);
+
+        var guestLeft = false;
+        guest.LeftRoom += () => guestLeft = true;
+        host.Kick("Guest");
+
+        // guest 被踢回大厅，Host 的名单里不再有 guest。
+        Pump(() => guest.State == EasyMultiState.Lobby, 5000, host, guest);
+        Assert.True(guestLeft);
+        Pump(() => host.RoomPlayers.Count == 1, 5000, host, guest);
+        Assert.DoesNotContain("Guest", host.RoomPlayers);
+
+        guest.Dispose();
+    }
+
     // ── UDP fragmentation ─────────────────────────────────────────────────────
 
     [Fact]

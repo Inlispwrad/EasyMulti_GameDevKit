@@ -26,6 +26,7 @@ public static class RelayMessageType
     public const string CreateRoom = "CREATE_ROOM";
     public const string JoinRoom   = "JOIN_ROOM";
     public const string LeaveRoom  = "LEAVE_ROOM";
+    public const string Kick       = "KICK";
     public const string StartGame  = "START_GAME";
     public const string GameData   = "GAME_DATA";
 
@@ -81,6 +82,15 @@ public readonly record struct JoinRoomRequest(string GameCode)
 public readonly record struct LeaveRoomRequest
 {
     public string Type => RelayMessageType.LeaveRoom;
+}
+
+/// <summary>
+/// Remove a member from the room. Host only. Used to clear a seat whose owner is
+/// permanently gone — deciding who that is, is host logic; the relay just removes.
+/// </summary>
+public readonly record struct KickRequest(string PlayerName)
+{
+    public string Type => RelayMessageType.Kick;
 }
 
 /// <summary>Mark the room as "in game". Host only. No game-specific gating is imposed by the relay.</summary>

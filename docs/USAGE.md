@@ -108,6 +108,7 @@ EasyMultiClient（C#）常用成员：
 | Poll() | 每帧驱动；所有事件都在 Poll 内回调 |
 | CreateRoom(roomName, maxPlayers) | 开房，成为房主 |
 | JoinRoom(code) / LeaveRoom() | 加入 / 离开房间 |
+| Kick(playerName) | 房主把人移出房间（在线者回大厅） |
 | RefreshRooms() | 拉取大厅房间列表 |
 | SendGameData(data, to?, mode?) | 发对局数据；to 缺省=广播，mode 缺省=可靠 |
 | StartGame() | 房主标记房间「开局」（阻止新加入、大厅可见） |
@@ -136,6 +137,7 @@ EasyMultiClient（C#）常用成员：
 - **一台中继能跑几个游戏？** 随便多少，用 gameId 隔开。部署一次，所有小游戏共用。
 - **大厅怎么筛「进行中」的房间？** 每个房间带 inGame 字段；用 Rooms.Where(r => !r.InGame) 或 JoinableRooms 只显示可加入的。开局后的房间别人加不进（会被 game_already_started 拒掉）。
 - **房间外的人能往房里发消息吗？** 不能。中继只受理房间成员发的 GAME_DATA，也只转发给房间成员；离开房间的人发不进去、也收不到。
-- **掉线了能重连回进行中的房间吗？** 能。掉线后座位保留 30 秒（可配 reconnect-grace-ms）；用同一个 playerName 重新 Connect + JoinRoom(房码) 就会坐回原座位（即便已开局）。30 秒没回来，座位才真正释放。
+- **掉线了能重连回进行中的房间吗？** 能，而且不限时。掉线后名字还在房间名单里；用同一个 playerName 重新 Connect + JoinRoom(房码) 就坐回原座位（即便已开局）。谁真走了、什么时候踢，是 Host 用 Kick 决定的。
+- **Host 怎么把人踢出去？** client.Kick(playerName)（仅房主可发）。被踢的在线成员会回大厅，名单里也不再是他；掉线没回来的成员也能被这样清掉。
 - **重连后怎么补发局面？** 中继不参与（它只认名单）。重连者重进房间后会收到 RoomJoined + GameStarted；Host 监听 PlayerReconnected(name)，把当前局面快照 SendGameData(快照, to: name) 发过去即可。
 - **掉线会被别人顶名字吗？** 会——名字就是身份，任何知道 token 的人都能用同一个名字重连顶替你。这与「共享 token 只防爬虫」的安全模型一致。
