@@ -100,6 +100,8 @@
     { "type": "JOIN_FAILED", "reason": "room_full" }
     { "type": "PLAYER_JOINED", "playerName": "Tester1", "players": ["Host", "Tester1"] }
     { "type": "PLAYER_LEFT", "playerName": "Tester1", "players": ["Host"] }
+    { "type": "PLAYER_DISCONNECTED", "playerName": "Tester1", "players": ["Host", "Tester1"] }
+    { "type": "PLAYER_RECONNECTED", "playerName": "Tester1", "players": ["Host", "Tester1"] }
     { "type": "GAME_STARTED" }
     { "type": "LEAVE_SUCCESS" }
     { "type": "GAME_DATA", "from": "Tester1", "data": "<base64>" }
@@ -107,6 +109,16 @@
 - 房间码由服务端生成：6 位大写字母 + 数字。
 - `players[]` 第一个元素恒为当前 Host；Host 离开时 `players[0]` 自动成为新 Host（对局状态不迁移）。
 - `JOIN_FAILED.reason` ∈ `room_not_found` / `room_full` / `game_already_started` / `name_taken`。
+
+## 掉线重连
+
+成员掉线**不会立刻被移除**，座位保留 `ReconnectGraceMs`（默认 30s，可配）。期间：
+
+1. 中继向其他成员发 `PLAYER_DISCONNECTED`（该成员仍在 `players[]` 里，只是标记为「掉线」）。
+2. 掉线者用**同一个 playerName** 重新 REGISTER，再发 `JOIN_ROOM(房码)` → 中继发现同名保留座位，直接让他坐回去（即便房间已 `inGame`），回 `JOIN_SUCCESS` +（若已开局）`GAME_STARTED`，并向其他人发 `PLAYER_RECONNECTED`。
+3. 宽限期过仍未重连 → 座位真正释放，发 `PLAYER_LEFT`。
+
+> 同名即身份：任何持有 token 的人都能用同一个名字顶替（与共享 token 的安全模型一致，防爬虫不防冒名）。
 
 ---
 

@@ -13,6 +13,10 @@ public sealed class RelayConfig
     public int UdpPort { get; set; } = 7777;
     public int MaxConnections { get; set; } = 1000;
     public long IdleTimeoutMs { get; set; } = 60_000;
+
+    /// <summary>掉线后座位保留多久（毫秒），期间同名重连可坐回原房间。</summary>
+    public long ReconnectGraceMs { get; set; } = 30_000;
+
     public string LogLevel { get; set; } = "info";
 
     /// <summary>
@@ -39,6 +43,7 @@ public sealed class RelayConfig
                     config.UdpPort = json.Udp?.Port ?? config.UdpPort;
                     config.MaxConnections = json.MaxConnections ?? config.MaxConnections;
                     config.IdleTimeoutMs = json.IdleTimeoutMs ?? config.IdleTimeoutMs;
+                    config.ReconnectGraceMs = json.ReconnectGraceMs ?? config.ReconnectGraceMs;
                     config.LogLevel = json.LogLevel ?? config.LogLevel;
                 }
             }
@@ -54,6 +59,7 @@ public sealed class RelayConfig
         config.UdpPort = EnvInt("EASYMULTI_UDP_PORT") ?? config.UdpPort;
         config.MaxConnections = EnvInt("EASYMULTI_MAX_CONNECTIONS") ?? config.MaxConnections;
         config.IdleTimeoutMs = EnvInt("EASYMULTI_IDLE_TIMEOUT_MS") ?? config.IdleTimeoutMs;
+        config.ReconnectGraceMs = EnvInt("EASYMULTI_RECONNECT_GRACE_MS") ?? config.ReconnectGraceMs;
         if (Env("EASYMULTI_WS_ENABLED") is string ws) config.WebSocketEnabled = IsTruthy(ws);
         if (Env("EASYMULTI_UDP_ENABLED") is string udp) config.UdpEnabled = IsTruthy(udp);
 
@@ -69,6 +75,7 @@ public sealed class RelayConfig
         if (HasFlag(args, "--no-ws")) config.WebSocketEnabled = false;
         if (HasFlag(args, "--no-udp")) config.UdpEnabled = false;
         if (int.TryParse(ArgValue(args, "--max-connections"), out int maxConn)) config.MaxConnections = maxConn;
+        if (int.TryParse(ArgValue(args, "--reconnect-grace-ms"), out int grace)) config.ReconnectGraceMs = grace;
         if (ArgValue(args, "--log-level") is string level) config.LogLevel = level;
 
         if (!config.WebSocketEnabled && !config.UdpEnabled)
@@ -114,6 +121,7 @@ public sealed class RelayConfig
         public UdpSection? Udp { get; set; }
         public int? MaxConnections { get; set; }
         public long? IdleTimeoutMs { get; set; }
+        public long? ReconnectGraceMs { get; set; }
         public string? LogLevel { get; set; }
     }
 

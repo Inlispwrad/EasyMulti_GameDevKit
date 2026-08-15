@@ -13,6 +13,12 @@ namespace EasyMulti.Relay;
 /// the main loop dequeues and dispatches, so every handler below runs on one thread and
 /// needs no locks. The relay only forwards <c>GAME_DATA.data</c> — it never parses it.
 /// </para>
+/// <para>
+/// Reconnection: a member whose connection drops keeps their <b>seat</b> in the room for
+/// <c>ReconnectGraceMs</c>. During that window they can re-register with the same
+/// playerName and JOIN_ROOM(code) to re-attach to their reserved seat — even if the game
+/// already started. After the grace expires the seat is freed for real.
+/// </para>
 /// </summary>
 public sealed class RelayServer
 {
@@ -54,15 +60,14 @@ public sealed class RelayServer
 
     /// <summary>
     /// Run the relay until <see cref="Stop"/> is called. A 1 ms poll keeps forwarding
-    /// latency low: <c>Thread.Sleep(1)</c> resolves to ~1 ms on Linux/macOS, while the
-    /// timeout-based alternatives (<c>SemaphoreSlim.Wait(1)</c>, <c>SpinWait.SpinUntil</c>)
-    /// round up to ~10 ms on macOS. The loop also drives the UDP transports' periodic
-    /// <c>Tick()</c> for retransmits and idle checks.
+    /// latency low; it also drives the UDP transports' <c>Tick()</c> and, every second,
+    /// the reconnect-grace reaper.
     /// </summary>
     public void Run()
     {
         Start();
         _running = true;
+        long lastReap = Environment.TickCount64;
         while (_running)
         {
             while (_events.TryDequeue(out RelayEvent e))
@@ -73,6 +78,13 @@ public sealed class RelayServer
             foreach (IRelayTransport transport in _transports)
             {
                 transport.Tick();
+            }
+
+            long now = Environment.TickCount64;
+            if (now - lastReap >= 1000)
+            {
+                ReapExpiredSeats();
+                lastReap = now;
             }
 
             Thread.Sleep(1);
@@ -137,7 +149,7 @@ public sealed class RelayServer
         string who = state.PlayerName ?? "（未注册）";
         if (state.Location == Loc.InRoom)
         {
-            LeaveRoom(connection, state);
+            ReserveSeat(connection, state); // 掉线保留座位，等重连
         }
 
         _peers.Remove(connection);
@@ -241,13 +253,7 @@ public sealed class RelayServer
 
         string gameId = state.GameId!;
         string code = GenerateCode(gameId);
-        var room = new Room
-        {
-            Code = code,
-            Name = roomName,
-            HostConn = connection,
-            MaxPlayers = maxPlayers,
-        };
+        var room = new Room { Code = code, Name = roomName, MaxPlayers = maxPlayers };
         room.Players.Add(new RoomPlayer { Name = state.PlayerName!, Conn = connection });
 
         Rooms(gameId)[code] = room;
@@ -275,6 +281,23 @@ public sealed class RelayServer
             return;
         }
 
+        // 重连：有同名保留座位 → 直接坐回（无论房间是否开局）。
+        RoomPlayer? seat = room.Players.FirstOrDefault(p => p.Name == playerName && p.Conn == null);
+        if (seat != null)
+        {
+            seat.Conn = connection;
+            seat.DisconnectedAtMs = 0;
+            state.Location = Loc.InRoom;
+            state.GameCode = code;
+
+            Send(connection, new JoinSuccessMessage(code, Names(room)));
+            if (room.InGame) Send(connection, new GameStartedMessage());
+            SendToRoom(room, new PlayerReconnectedMessage(playerName, Names(room)), except: connection);
+            Log($"Peer reconnected to room {code}: {playerName} @ {gameId}");
+            return;
+        }
+
+        // 新加入。
         if (room.InGame)
         {
             Send(connection, new JoinFailedMessage("game_already_started"));
@@ -298,15 +321,7 @@ public sealed class RelayServer
         state.GameCode = code;
 
         Send(connection, new JoinSuccessMessage(code, Names(room)));
-        var joined = new PlayerJoinedMessage(playerName, Names(room));
-        foreach (RoomPlayer p in room.Players)
-        {
-            if (p.Conn != connection)
-            {
-                Send(p.Conn, joined);
-            }
-        }
-
+        SendToRoom(room, new PlayerJoinedMessage(playerName, Names(room)), except: connection);
         Log($"Peer joined room {code}: {playerName} @ {gameId}");
         BroadcastLobbyUpdated(gameId);
     }
@@ -329,16 +344,8 @@ public sealed class RelayServer
         }
         else
         {
-            if (room.HostConn == connection)
-            {
-                room.HostConn = room.Players[0].Conn; // host migration
-            }
-
-            var left = new PlayerLeftMessage(leavingName, Names(room));
-            foreach (RoomPlayer p in room.Players)
-            {
-                Send(p.Conn, left);
-            }
+            // 房主离开时 players[0] 自动顺延（列表移位），无需显式迁移。
+            SendToRoom(room, new PlayerLeftMessage(leavingName, Names(room)));
         }
 
         Send(connection, new LeaveSuccessMessage());
@@ -350,16 +357,11 @@ public sealed class RelayServer
     {
         if (state.Location != Loc.InRoom || state.GameCode is null) return;
         if (!Rooms(state.GameId!).TryGetValue(state.GameCode, out Room? room)) return;
-        if (!IsMember(room, connection)) return;      // 只有房间成员能开局
-        if (room.HostConn != connection) return;      // 且只有房主能开
+        if (room.Players.Count == 0 || room.Players[0].Conn != connection) return; // 只有房主能开
 
         room.InGame = true;
         Log($"Game started in room {state.GameCode}");
-        foreach (RoomPlayer p in room.Players)
-        {
-            Send(p.Conn, new GameStartedMessage());
-        }
-
+        SendToRoom(room, new GameStartedMessage());
         BroadcastLobbyUpdated(state.GameId!);
     }
 
@@ -375,21 +377,67 @@ public sealed class RelayServer
 
         if (!string.IsNullOrEmpty(req.To))
         {
-            RoomPlayer? target = room.Players.FirstOrDefault(p => p.Name == req.To && p.Conn != connection);
+            RoomPlayer? target = room.Players.FirstOrDefault(p => p.Name == req.To && p.Conn != null && p.Conn != connection);
             if (target != null)
             {
-                Send(target.Conn, fwd, mode);
+                Send(target.Conn!, fwd, mode);
             }
 
             return;
         }
 
-        foreach (RoomPlayer p in room.Players)
+        SendToRoom(room, fwd, except: connection, mode: mode);
+    }
+
+    // ── Reconnection ──────────────────────────────────────────────────────────
+
+    /// <summary>把断开连接的成员标记为「保留座位」，等它同名重连。</summary>
+    private void ReserveSeat(IRelayConnection connection, PeerState state)
+    {
+        if (state.GameCode is null) return;
+        if (!Rooms(state.GameId!).TryGetValue(state.GameCode, out Room? room)) return;
+
+        RoomPlayer? seat = room.Players.FirstOrDefault(p => p.Conn == connection);
+        if (seat == null) return;
+
+        seat.Conn = null;
+        seat.DisconnectedAtMs = Environment.TickCount64;
+        Log($"Seat reserved for reconnect: {seat.Name} in room {room.Code}");
+        SendToRoom(room, new PlayerDisconnectedMessage(seat.Name, Names(room)));
+    }
+
+    /// <summary>释放超过宽限期的保留座位，真移除并通知、必要时销毁空房间。</summary>
+    private void ReapExpiredSeats()
+    {
+        long now = Environment.TickCount64;
+        var emptyRooms = new List<(string GameId, string Code)>();
+
+        foreach ((string gameId, Dictionary<string, Room> rooms) in _games)
         {
-            if (p.Conn != connection)
+            foreach ((string code, Room room) in rooms)
             {
-                Send(p.Conn, fwd, mode);
+                var expired = room.Players
+                    .Where(p => p.Conn == null && p.DisconnectedAtMs > 0 && now - p.DisconnectedAtMs >= _config.ReconnectGraceMs)
+                    .ToList();
+                if (expired.Count == 0) continue;
+
+                foreach (RoomPlayer seat in expired)
+                {
+                    room.Players.Remove(seat);
+                    Log($"Reconnect grace expired: {seat.Name} in room {code}");
+                    SendToRoom(room, new PlayerLeftMessage(seat.Name, Names(room)));
+                }
+
+                BroadcastLobbyUpdated(gameId);
+                if (room.Players.Count == 0) emptyRooms.Add((gameId, code));
             }
+        }
+
+        foreach ((string gameId, string code) in emptyRooms)
+        {
+            _games[gameId].Remove(code);
+            if (_games[gameId].Count == 0) _games.Remove(gameId);
+            Log($"Room destroyed: {code}");
         }
     }
 
@@ -451,6 +499,18 @@ public sealed class RelayServer
 
     private static bool IsMember(Room room, IRelayConnection connection) =>
         room.Players.Any(p => p.Conn == connection);
+
+    /// <summary>发一条消息给房间里所有在线的成员，可排除某个连接。</summary>
+    private void SendToRoom(Room room, object message, IRelayConnection? except = null, DeliveryMode mode = DeliveryMode.Reliable)
+    {
+        foreach (RoomPlayer p in room.Players)
+        {
+            if (p.Conn != null && p.Conn != except)
+            {
+                Send(p.Conn, message, mode);
+            }
+        }
+    }
 
     private void Send(IRelayConnection connection, object message, DeliveryMode mode = DeliveryMode.Reliable) =>
         connection.Send(RelayCodec.Serialize(message), mode);
@@ -527,7 +587,6 @@ public sealed class RelayServer
         public string Code = "";
         public string Name = "";
         public List<RoomPlayer> Players = new();
-        public IRelayConnection HostConn = null!;
         public bool InGame;
         public int MaxPlayers = 4;
     }
@@ -535,6 +594,7 @@ public sealed class RelayServer
     private sealed class RoomPlayer
     {
         public string Name = "";
-        public IRelayConnection Conn = null!;
+        public IRelayConnection? Conn;   // null = 掉线但座位保留，等待重连
+        public long DisconnectedAtMs;    // 掉线时刻（0 = 在线）
     }
 }

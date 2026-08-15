@@ -210,6 +210,23 @@ public sealed class EasyMultiClient : IDisposable
 
                 break;
 
+            case RelayMessageType.PlayerDisconnected:
+                // 成员掉线但座位保留：名单不变（他还在 players 里）。
+                if (RelayCodec.TryDeserialize(json, out PlayerDisconnectedMessage pd))
+                {
+                    SetRoomPlayers(pd.Players);
+                }
+
+                break;
+
+            case RelayMessageType.PlayerReconnected:
+                if (RelayCodec.TryDeserialize(json, out PlayerReconnectedMessage pr))
+                {
+                    SetRoomPlayers(pr.Players);
+                }
+
+                break;
+
             case RelayMessageType.GameStarted:
                 State = EasyMultiState.InGame;
                 GameStarted?.Invoke();

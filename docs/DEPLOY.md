@@ -17,6 +17,7 @@
 | UDP 端口 | `udp.port` | `EASYMULTI_UDP_PORT` | `--udp-port` | 7777 |
 | 最大连接数 | `maxConnections` | `EASYMULTI_MAX_CONNECTIONS` | `--max-connections` | 1000 |
 | UDP 空闲超时(ms) | `idleTimeoutMs` | `EASYMULTI_IDLE_TIMEOUT_MS` | — | 60000 |
+| 重连宽限期(ms) | `reconnectGraceMs` | `EASYMULTI_RECONNECT_GRACE_MS` | `--reconnect-grace-ms` | 30000 |
 
 `--port N` 是便捷写法：同时把 WebSocket 与 UDP 都设为 N（TCP 与 UDP 是不同协议栈，可共用同一端口号）。
 

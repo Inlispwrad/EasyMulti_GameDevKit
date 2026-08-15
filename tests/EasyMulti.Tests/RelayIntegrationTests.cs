@@ -240,6 +240,48 @@ public class RelayIntegrationTests
         Assert.Empty(guestData);
     }
 
+    [Fact]
+    public void DisconnectedMember_CanReconnectToInGameRoom()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom();
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest);
+        host.StartGame();
+        Pump(() => host.State == EasyMultiState.InGame, 5000, host, guest);
+
+        // 模拟 guest 掉线：关连接，中继保留其座位（宽限期内）。
+        guest.Dispose();
+        PollSilence(host);
+
+        // 同名重连 + 重新加入（房间已开局）。
+        var guest2 = EasyMultiClient.CreateWebSocket(Config("Guest"));
+        ConnectAndRegister(guest2, relay.WsPort, host, guest2);
+        string rejoined = "";
+        guest2.RoomJoined += c => rejoined = c;
+        guest2.JoinRoom(code);
+        Pump(() => guest2.State == EasyMultiState.InGame, 5000, host, guest2);
+        Assert.Equal(code, rejoined);
+
+        // 重连后能正常收发。
+        var hostData = new List<(string From, string Data)>();
+        host.GameDataReceived += (from, data) => hostData.Add((from, data));
+        guest2.SendGameData("back-online");
+        Pump(() => hostData.Count == 1, 5000, host, guest2);
+        Assert.Equal(("Guest", "back-online"), hostData.Single());
+
+        guest2.Dispose();
+    }
+
     // ── UDP fragmentation ─────────────────────────────────────────────────────
 
     [Fact]

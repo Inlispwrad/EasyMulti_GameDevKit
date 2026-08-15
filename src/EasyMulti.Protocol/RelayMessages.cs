@@ -39,6 +39,8 @@ public static class RelayMessageType
     public const string JoinFailed      = "JOIN_FAILED";
     public const string PlayerJoined    = "PLAYER_JOINED";
     public const string PlayerLeft      = "PLAYER_LEFT";
+    public const string PlayerDisconnected = "PLAYER_DISCONNECTED";
+    public const string PlayerReconnected  = "PLAYER_RECONNECTED";
     public const string GameStarted     = "GAME_STARTED";
     public const string LeaveSuccess    = "LEAVE_SUCCESS";
 }
@@ -153,12 +155,27 @@ public readonly record struct PlayerJoinedMessage(string PlayerName, string[] Pl
 }
 
 /// <summary>
-/// Someone left (voluntarily or by disconnecting). <see cref="Players"/> is the remaining list;
-/// if the host left, <see cref="Players"/>[0] is the new host.
+/// Someone left (voluntarily or after the reconnect grace expired). <see cref="Players"/> is the
+/// remaining list; if the host left, <see cref="Players"/>[0] is the new host.
 /// </summary>
 public readonly record struct PlayerLeftMessage(string PlayerName, string[] Players)
 {
     public string Type => RelayMessageType.PlayerLeft;
+}
+
+/// <summary>
+/// A member's connection dropped; their seat is still reserved for reconnection.
+/// <see cref="Players"/> is the full member list (the disconnected member is still in it).
+/// </summary>
+public readonly record struct PlayerDisconnectedMessage(string PlayerName, string[] Players)
+{
+    public string Type => RelayMessageType.PlayerDisconnected;
+}
+
+/// <summary>A previously disconnected member re-attached to their reserved seat.</summary>
+public readonly record struct PlayerReconnectedMessage(string PlayerName, string[] Players)
+{
+    public string Type => RelayMessageType.PlayerReconnected;
 }
 
 /// <summary>Game started; broadcast to every room member.</summary>
