@@ -74,7 +74,7 @@
 
 ### Client → Server
 
-    { "type": "CREATE_ROOM", "roomName": "Jin's Test", "maxPlayers": 4 }
+    { "type": "CREATE_ROOM", "roomName": "Jin's Test", "maxPlayers": 4, "autoHostTransfer": true }
     { "type": "JOIN_ROOM", "gameCode": "ABC123" }
     { "type": "LEAVE_ROOM" }
     { "type": "KICK", "playerName": "Tester2" }
@@ -86,6 +86,7 @@
 |---|---|---|---|---|
 | CREATE_ROOM.roomName | string | 否 | "Room" | 房间显示名 |
 | CREATE_ROOM.maxPlayers | int | 否 | 4 | 人数上限，服务端夹到 [2, 1024] |
+| CREATE_ROOM.autoHostTransfer | bool | 否 | false | 房主掉线是否自动顺延给下一位在线成员；专服应设 false |
 | GAME_DATA.data | string | 是 | — | 不透明载荷，中继不解析 |
 | GAME_DATA.to | string | 否 | 缺省 | 缺省→广播给同房间其他成员；给定→定向给该玩家名 |
 
@@ -103,6 +104,7 @@
     { "type": "PLAYER_LEFT", "playerName": "Tester1", "players": ["Host"] }
     { "type": "PLAYER_DISCONNECTED", "playerName": "Tester1", "players": ["Host", "Tester1"] }
     { "type": "PLAYER_RECONNECTED", "playerName": "Tester1", "players": ["Host", "Tester1"] }
+    { "type": "HOST_CHANGED", "hostName": "Tester1", "players": ["Tester1", "Host"] }
     { "type": "GAME_STARTED" }
     { "type": "LEAVE_SUCCESS" }
     { "type": "GAME_DATA", "from": "Tester1", "data": "<base64>" }
@@ -119,8 +121,14 @@
 2. 掉线者用**同一个 playerName** 重新 REGISTER + `JOIN_ROOM(房码)` → 中继发现同名保留座位，直接坐回（即便已 `inGame`），回 `JOIN_SUCCESS` +（若已开局）`GAME_STARTED`，并向其他人发 `PLAYER_RECONNECTED`。
 3. 移除（谁真走了、什么时候踢）是 **Host 逻辑**：房主发 `KICK { playerName }`，中继把该名字从名单移除、发 `PLAYER_LEFT`（在线者同时被送回大厅）。成员自己 `LEAVE_ROOM` 也一样移除。
 
+## 房主自动转交
+
+开房时 `CREATE_ROOM.autoHostTransfer` 决定房主掉线后怎么办：
+
+- **true**：房主掉线 → 中继把房主顺延给下一个**在线**成员（名单重排，新 host 到 `players[0]`），广播 `HOST_CHANGED { hostName, players }`。允许转交的游戏里，被指派的玩家自己就能当 host。
+- **false（默认）**：房主掉线 → 座位保留、不换人（等原房主重连，或由 Host 逻辑 KICK）。**专服场景**（host 是独立服务器、和玩家分开）必须用这个。
+
 > 同名即身份：任何持有 token 的人都能用同一个名字顶替（与共享 token 的安全模型一致，防爬虫不防冒名）。
-> 房主掉线后座位同样保留、不自动换人——要不要换房主由 Host 层决定（例如让其他人 KICK 掉旧房主）。
 
 ---
 

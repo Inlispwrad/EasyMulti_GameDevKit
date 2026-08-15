@@ -106,7 +106,7 @@ EasyMultiClient（C#）常用成员：
 | CreateUdp(config) / CreateWebSocket(config) | 建客户端（UDP / WebSocket） |
 | Connect(host, port) | 连中继，自动 REGISTER |
 | Poll() | 每帧驱动；所有事件都在 Poll 内回调 |
-| CreateRoom(roomName, maxPlayers) | 开房，成为房主 |
+| CreateRoom(roomName, maxPlayers, autoHostTransfer?) | 开房，成为房主；autoHostTransfer=房主掉线是否自动顺延 |
 | JoinRoom(code) / LeaveRoom() | 加入 / 离开房间 |
 | Kick(playerName) | 房主把人移出房间（在线者回大厅） |
 | RefreshRooms() | 拉取大厅房间列表 |
@@ -123,6 +123,7 @@ EasyMultiClient（C#）常用成员：
 | RoomPlayersChanged | 有人进出（players[0] 恒房主） |
 | PlayerDisconnected(name) | 某成员掉线（座位仍保留） |
 | PlayerReconnected(name) | 某成员重连坐回（Host 借此补发局面） |
+| HostChanged(name) | 房主换了；name 等于自己时表示「我是新房主」 |
 | GameStarted | 房主发了 StartGame |
 | GameDataReceived(from, data) | 收到对局数据 |
 
@@ -139,5 +140,6 @@ EasyMultiClient（C#）常用成员：
 - **房间外的人能往房里发消息吗？** 不能。中继只受理房间成员发的 GAME_DATA，也只转发给房间成员；离开房间的人发不进去、也收不到。
 - **掉线了能重连回进行中的房间吗？** 能，而且不限时。掉线后名字还在房间名单里；用同一个 playerName 重新 Connect + JoinRoom(房码) 就坐回原座位（即便已开局）。谁真走了、什么时候踢，是 Host 用 Kick 决定的。
 - **Host 怎么把人踢出去？** client.Kick(playerName)（仅房主可发）。被踢的在线成员会回大厅，名单里也不再是他；掉线没回来的成员也能被这样清掉。
+- **房主掉线了能自动换人吗？** 开房时 CreateRoom(..., autoHostTransfer: true) 就会自动顺延给下一位在线成员（发 HostChanged 通知）。专服（host 是独立服务器、和玩家分开）用默认的 false，房主掉线只保留座位、不换人。
 - **重连后怎么补发局面？** 中继不参与（它只认名单）。重连者重进房间后会收到 RoomJoined + GameStarted；Host 监听 PlayerReconnected(name)，把当前局面快照 SendGameData(快照, to: name) 发过去即可。
 - **掉线会被别人顶名字吗？** 会——名字就是身份，任何知道 token 的人都能用同一个名字重连顶替你。这与「共享 token 只防爬虫」的安全模型一致。

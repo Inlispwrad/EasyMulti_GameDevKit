@@ -42,6 +42,7 @@ public static class RelayMessageType
     public const string PlayerLeft      = "PLAYER_LEFT";
     public const string PlayerDisconnected = "PLAYER_DISCONNECTED";
     public const string PlayerReconnected  = "PLAYER_RECONNECTED";
+    public const string HostChanged     = "HOST_CHANGED";
     public const string GameStarted     = "GAME_STARTED";
     public const string LeaveSuccess    = "LEAVE_SUCCESS";
 }
@@ -67,7 +68,12 @@ public readonly record struct ListRoomsRequest
 /// <summary>Create a room. The creator becomes the host (players[0]).</summary>
 /// <param name="RoomName">Display name; default "Room".</param>
 /// <param name="MaxPlayers">Capacity; default 4.</param>
-public readonly record struct CreateRoomRequest(string? RoomName = null, int? MaxPlayers = null)
+/// <param name="AutoHostTransfer">
+/// If true, when the host disconnects the relay passes the host role to the next connected
+/// member. If false (default), the host seat is reserved for reconnection — for dedicated
+/// servers where players cannot take over hosting.
+/// </param>
+public readonly record struct CreateRoomRequest(string? RoomName = null, int? MaxPlayers = null, bool? AutoHostTransfer = null)
 {
     public string Type => RelayMessageType.CreateRoom;
 }
@@ -186,6 +192,15 @@ public readonly record struct PlayerDisconnectedMessage(string PlayerName, strin
 public readonly record struct PlayerReconnectedMessage(string PlayerName, string[] Players)
 {
     public string Type => RelayMessageType.PlayerReconnected;
+}
+
+/// <summary>
+/// The host role was transferred (auto host transfer). <see cref="HostName"/> is the new
+/// host; <see cref="Players"/> is the reordered list with the new host at [0].
+/// </summary>
+public readonly record struct HostChangedMessage(string HostName, string[] Players)
+{
+    public string Type => RelayMessageType.HostChanged;
 }
 
 /// <summary>Game started; broadcast to every room member.</summary>

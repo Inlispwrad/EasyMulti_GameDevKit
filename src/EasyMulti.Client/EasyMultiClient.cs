@@ -83,6 +83,9 @@ public sealed class EasyMultiClient : IDisposable
     /// <summary>某成员重连坐回（座位重新接上）。参数是 playerName。Host 可借此给他补发局面。</summary>
     public event Action<string>? PlayerReconnected;
 
+    /// <summary>房主换了（自动转交）。参数是新 host 的 playerName；等于自己名字时表示「我是新房主」。</summary>
+    public event Action<string>? HostChanged;
+
     public event Action? GameStarted;
     public event Action? LeftRoom;
     public event Action<string, string>? GameDataReceived;
@@ -103,8 +106,9 @@ public sealed class EasyMultiClient : IDisposable
 
     public void RefreshRooms() => Send(new ListRoomsRequest());
 
-    public void CreateRoom(string? roomName = null, int? maxPlayers = null) =>
-        Send(new CreateRoomRequest(roomName, maxPlayers));
+    /// <param name="autoHostTransfer">房主掉线是否自动顺延给下一位在线成员（专服应设 false）。</param>
+    public void CreateRoom(string? roomName = null, int? maxPlayers = null, bool? autoHostTransfer = null) =>
+        Send(new CreateRoomRequest(roomName, maxPlayers, autoHostTransfer));
 
     public void JoinRoom(string gameCode) => Send(new JoinRoomRequest(gameCode));
 
@@ -235,6 +239,15 @@ public sealed class EasyMultiClient : IDisposable
                 {
                     SetRoomPlayers(pr.Players);
                     PlayerReconnected?.Invoke(pr.PlayerName);
+                }
+
+                break;
+
+            case RelayMessageType.HostChanged:
+                if (RelayCodec.TryDeserialize(json, out HostChangedMessage hc))
+                {
+                    SetRoomPlayers(hc.Players);
+                    HostChanged?.Invoke(hc.HostName);
                 }
 
                 break;

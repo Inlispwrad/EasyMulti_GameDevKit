@@ -319,6 +319,65 @@ public class RelayIntegrationTests
         guest.Dispose();
     }
 
+    [Fact]
+    public void AutoHostTransfer_On_MigratesToNextPlayer()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom(autoHostTransfer: true);
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest);
+
+        var hostChanges = new List<string>();
+        guest.HostChanged += hostChanges.Add;
+        host.Dispose(); // 房主掉线 → 自动转交
+
+        Pump(() => hostChanges.Contains("Guest"), 5000, guest);
+        Assert.Equal("Guest", guest.HostName);
+        Assert.Equal("Guest", guest.RoomPlayers[0]);
+
+        guest.Dispose();
+    }
+
+    [Fact]
+    public void AutoHostTransfer_Off_HostSeatReserved()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom(); // 默认 autoHostTransfer=false
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest);
+
+        var hostChanges = new List<string>();
+        var disconnected = new List<string>();
+        guest.HostChanged += hostChanges.Add;
+        guest.PlayerDisconnected += disconnected.Add;
+        host.Dispose();
+
+        Pump(() => disconnected.Contains("Host"), 5000, guest);
+        Assert.Empty(hostChanges);            // 不转交
+        Assert.Equal("Host", guest.HostName); // 房主还是 Host（座位保留）
+        Assert.Equal("Host", guest.RoomPlayers[0]);
+
+        guest.Dispose();
+    }
+
     // ── UDP fragmentation ─────────────────────────────────────────────────────
 
     [Fact]

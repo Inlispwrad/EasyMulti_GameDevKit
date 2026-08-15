@@ -246,7 +246,13 @@ public sealed class RelayServer
 
         string gameId = state.GameId!;
         string code = GenerateCode(gameId);
-        var room = new Room { Code = code, Name = roomName, MaxPlayers = maxPlayers };
+        var room = new Room
+        {
+            Code = code,
+            Name = roomName,
+            MaxPlayers = maxPlayers,
+            AutoHostTransfer = req.AutoHostTransfer ?? false,
+        };
         room.Players.Add(new RoomPlayer { Name = state.PlayerName!, Conn = connection });
 
         Rooms(gameId)[code] = room;
@@ -392,8 +398,23 @@ public sealed class RelayServer
         RoomPlayer? seat = room.Players.FirstOrDefault(p => p.Conn == connection);
         if (seat == null) return;
 
+        bool wasHost = room.Players.Count > 0 && room.Players[0] == seat;
         seat.Conn = null;
         Log($"Seat reserved for reconnect: {seat.Name} in room {room.Code}");
+
+        // 房主掉线且开房时声明了自动转交：顺延给下一个在线的成员。
+        if (wasHost && room.AutoHostTransfer)
+        {
+            int next = room.Players.FindIndex(p => p.Conn != null);
+            if (next > 0)
+            {
+                (room.Players[0], room.Players[next]) = (room.Players[next], room.Players[0]);
+                Log($"Host transferred: {seat.Name} → {room.Players[0].Name} in room {room.Code}");
+                SendToRoom(room, new HostChangedMessage(room.Players[0].Name, Names(room)));
+                return;
+            }
+        }
+
         SendToRoom(room, new PlayerDisconnectedMessage(seat.Name, Names(room)));
     }
 
@@ -589,6 +610,7 @@ public sealed class RelayServer
         public List<RoomPlayer> Players = new();
         public bool InGame;
         public int MaxPlayers = 4;
+        public bool AutoHostTransfer;   // 房主掉线是否自动顺延（专服通常关）
     }
 
     private sealed class RoomPlayer
