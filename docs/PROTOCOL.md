@@ -120,6 +120,7 @@
 1. 成员掉线 → 中继发 `PLAYER_DISCONNECTED`（他仍在 `players[]`，标记为「掉线」）。
 2. 掉线者用**同一个 playerName** 重新 REGISTER + `JOIN_ROOM(房码)` → 中继发现同名保留座位，直接坐回（即便已 `inGame`），回 `JOIN_SUCCESS` +（若已开局）`GAME_STARTED`，并向其他人发 `PLAYER_RECONNECTED`。
 3. 移除（谁真走了、什么时候踢）是 **Host 逻辑**：房主发 `KICK { playerName }`，中继把该名字从名单移除、发 `PLAYER_LEFT`（在线者同时被送回大厅）。成员自己 `LEAVE_ROOM` 也一样移除。
+4. **房间里没有在线成员了 → 房间销毁**（僵尸房间清理）：最后一个人掉线/离开/被踢后，中继删掉房间并通知大厅。
 
 ## 房主自动转交
 

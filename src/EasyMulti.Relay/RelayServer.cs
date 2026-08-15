@@ -335,14 +335,9 @@ public sealed class RelayServer
         state.Location = Loc.Lobby;
         state.GameCode = null;
 
-        if (room.Players.Count == 0)
+        // 没有在线成员 → 房间销毁；否则通知剩下的人（房主离开 players[0] 自动顺延）。
+        if (!DestroyIfNoLiveMembers(room, state.GameId!))
         {
-            Rooms(state.GameId!).Remove(code);
-            Log($"Room destroyed: {code}");
-        }
-        else
-        {
-            // 房主离开时 players[0] 自动顺延（列表移位），无需显式迁移。
             SendToRoom(room, new PlayerLeftMessage(leavingName, Names(room)));
         }
 
@@ -416,6 +411,9 @@ public sealed class RelayServer
         }
 
         SendToRoom(room, new PlayerDisconnectedMessage(seat.Name, Names(room)));
+
+        // 房间里没有在线成员了 → 销毁（僵尸房间清理）。
+        DestroyIfNoLiveMembers(room, state.GameId!);
     }
 
     /// <summary>房主踢人：把指定成员从名单移除（在线则送回大厅），通知其余人。</summary>
@@ -449,14 +447,13 @@ public sealed class RelayServer
             Send(target.Conn, RoomsPayload(gameId, RelayMessageType.RoomList));
         }
 
-        if (room.Players.Count == 0)
+        if (!DestroyIfNoLiveMembers(room, gameId))
         {
-            Rooms(gameId).Remove(room.Code);
-            Log($"Room destroyed: {room.Code}");
+            SendToRoom(room, new PlayerLeftMessage(target.Name, Names(room)));
         }
         else
         {
-            SendToRoom(room, new PlayerLeftMessage(target.Name, Names(room)));
+            return; // 房间已销毁，DestroyIfNoLiveMembers 已通知大厅
         }
 
         BroadcastLobbyUpdated(gameId);
@@ -531,6 +528,18 @@ public sealed class RelayServer
                 Send(p.Conn, message, mode);
             }
         }
+    }
+
+    /// <summary>房间里没有在线成员就销毁它（僵尸房间清理），并通知大厅。返回是否销毁。</summary>
+    private bool DestroyIfNoLiveMembers(Room room, string gameId)
+    {
+        if (room.Players.Any(p => p.Conn != null)) return false;
+
+        Rooms(gameId).Remove(room.Code);
+        if (_games[gameId].Count == 0) _games.Remove(gameId);
+        Log($"Room destroyed (no live members): {room.Code}");
+        BroadcastLobbyUpdated(gameId);
+        return true;
     }
 
     private void Send(IRelayConnection connection, object message, DeliveryMode mode = DeliveryMode.Reliable) =>

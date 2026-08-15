@@ -378,6 +378,34 @@ public class RelayIntegrationTests
         guest.Dispose();
     }
 
+    [Fact]
+    public void RoomDestroyed_WhenNoLiveMembers()
+    {
+        using var relay = new RelayHarness();
+        var host = EasyMultiClient.CreateWebSocket(Config("Host"));
+        var guest = EasyMultiClient.CreateWebSocket(Config("Guest"));
+        var watcher = EasyMultiClient.CreateWebSocket(Config("Watcher")); // 大厅观察者
+
+        ConnectAndRegister(host, relay.WsPort, host);
+        ConnectAndRegister(guest, relay.WsPort, host, guest);
+        ConnectAndRegister(watcher, relay.WsPort, host, guest, watcher);
+
+        string code = "";
+        host.RoomCreated += c => code = c;
+        host.CreateRoom(autoHostTransfer: true);
+        Pump(() => host.State == EasyMultiState.InRoom, 5000, host, guest, watcher);
+        guest.JoinRoom(code);
+        Pump(() => guest.State == EasyMultiState.InRoom, 5000, host, guest, watcher);
+        Pump(() => watcher.Rooms.Any(r => r.Code == code), 5000, host, guest, watcher);
+
+        // 所有人掉线 → 没有在线成员 → 房间销毁。
+        host.Dispose();
+        guest.Dispose();
+        Pump(() => !watcher.Rooms.Any(r => r.Code == code), 5000, watcher);
+
+        watcher.Dispose();
+    }
+
     // ── UDP fragmentation ─────────────────────────────────────────────────────
 
     [Fact]
