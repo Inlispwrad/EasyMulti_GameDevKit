@@ -4,6 +4,13 @@
 
 > **EasyMulti 只做数据转交。** 玩家自己起 Host（可以是某个客户端开房，也可以是独立服务器进程）。中继不解析游戏内容，也不跑任何游戏规则。
 
+## 来源
+
+EasyMulti 是从 PokerRush 的 **DevRelay**（一个开发期 WebSocket 中继）演化来的，保留了它的核心设计——单线程事件循环、零第三方依赖、GAME_DATA 信封、`players[0]` 即房主、可靠/不可靠通道；并做了几处扩展与简化：
+
+- **新增**：gameId 路由、token 鉴权、UDP 传输（DevRelay 已切到 WebSocket-only）、掉线重连（名单准入）、KICK、自动转交房主、无人即销毁。
+- **去掉**：DevRelay 里 PokerRush 特有的 `SET_READY` / `ROOM_READY` 与「满员且全员准备才能开局」的开局条件——那套耦合 EasyMulti 不继承，准备状态和开局条件属于游戏层。
+
 ## 特性
 
 - **双传输**：一条中继同时接受 **WebSocket**（浏览器 / Godot Web）与 **UDP**（Steam / NS / 桌面）。两者**天然互通**——一个 WebSocket 客户端可以加入一个 UDP Host 开的房间。

@@ -259,7 +259,7 @@ public class RelayIntegrationTests
         host.StartGame();
         Pump(() => host.State == EasyMultiState.InGame, 5000, host, guest);
 
-        // 模拟 guest 掉线：关连接，中继保留其座位（宽限期内）。
+        // 模拟 guest 掉线：关连接，中继保留其座位（名单还在，不限时）。
         var hostSawDisconnect = new List<string>();
         host.PlayerDisconnected += hostSawDisconnect.Add;
         guest.Dispose();

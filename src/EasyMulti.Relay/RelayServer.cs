@@ -14,10 +14,10 @@ namespace EasyMulti.Relay;
 /// needs no locks. The relay only forwards <c>GAME_DATA.data</c> — it never parses it.
 /// </para>
 /// <para>
-/// Reconnection: a member whose connection drops keeps their <b>seat</b> in the room for
-/// <c>ReconnectGraceMs</c>. During that window they can re-register with the same
-/// playerName and JOIN_ROOM(code) to re-attach to their reserved seat — even if the game
-/// already started. After the grace expires the seat is freed for real.
+/// Reconnection: a member whose connection drops keeps their <b>seat</b> (name) in the room
+/// indefinitely. They can re-register with the same playerName and JOIN_ROOM(code) to
+/// re-attach — even if the game already started. Removing a seat is host-driven (KICK), and
+/// a room with no live members is destroyed. No time-based logic lives here.
 /// </para>
 /// </summary>
 public sealed class RelayServer
