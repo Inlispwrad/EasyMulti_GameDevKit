@@ -76,6 +76,13 @@ public sealed class EasyMultiClient : IDisposable
     public event Action<string>? RoomCreated;
     public event Action<string>? RoomJoined;
     public event Action<IReadOnlyList<string>>? RoomPlayersChanged;
+
+    /// <summary>某成员掉线（座位仍保留）。参数是 playerName。</summary>
+    public event Action<string>? PlayerDisconnected;
+
+    /// <summary>某成员重连坐回（座位重新接上）。参数是 playerName。Host 可借此给他补发局面。</summary>
+    public event Action<string>? PlayerReconnected;
+
     public event Action? GameStarted;
     public event Action? LeftRoom;
     public event Action<string, string>? GameDataReceived;
@@ -215,6 +222,7 @@ public sealed class EasyMultiClient : IDisposable
                 if (RelayCodec.TryDeserialize(json, out PlayerDisconnectedMessage pd))
                 {
                     SetRoomPlayers(pd.Players);
+                    PlayerDisconnected?.Invoke(pd.PlayerName);
                 }
 
                 break;
@@ -223,6 +231,7 @@ public sealed class EasyMultiClient : IDisposable
                 if (RelayCodec.TryDeserialize(json, out PlayerReconnectedMessage pr))
                 {
                     SetRoomPlayers(pr.Players);
+                    PlayerReconnected?.Invoke(pr.PlayerName);
                 }
 
                 break;

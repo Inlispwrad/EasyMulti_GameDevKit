@@ -120,6 +120,8 @@ EasyMultiClient（C#）常用成员：
 | RoomCreated / RoomJoined | 开房 / 加房成功 |
 | RoomListChanged | 大厅列表变化（进大厅时、房间变化时） |
 | RoomPlayersChanged | 有人进出（players[0] 恒房主） |
+| PlayerDisconnected(name) | 某成员掉线（座位仍保留） |
+| PlayerReconnected(name) | 某成员重连坐回（Host 借此补发局面） |
 | GameStarted | 房主发了 StartGame |
 | GameDataReceived(from, data) | 收到对局数据 |
 
@@ -135,4 +137,5 @@ EasyMultiClient（C#）常用成员：
 - **大厅怎么筛「进行中」的房间？** 每个房间带 inGame 字段；用 Rooms.Where(r => !r.InGame) 或 JoinableRooms 只显示可加入的。开局后的房间别人加不进（会被 game_already_started 拒掉）。
 - **房间外的人能往房里发消息吗？** 不能。中继只受理房间成员发的 GAME_DATA，也只转发给房间成员；离开房间的人发不进去、也收不到。
 - **掉线了能重连回进行中的房间吗？** 能。掉线后座位保留 30 秒（可配 reconnect-grace-ms）；用同一个 playerName 重新 Connect + JoinRoom(房码) 就会坐回原座位（即便已开局）。30 秒没回来，座位才真正释放。
+- **重连后怎么补发局面？** 中继不参与（它只认名单）。重连者重进房间后会收到 RoomJoined + GameStarted；Host 监听 PlayerReconnected(name)，把当前局面快照 SendGameData(快照, to: name) 发过去即可。
 - **掉线会被别人顶名字吗？** 会——名字就是身份，任何知道 token 的人都能用同一个名字重连顶替你。这与「共享 token 只防爬虫」的安全模型一致。

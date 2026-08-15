@@ -260,17 +260,24 @@ public class RelayIntegrationTests
         Pump(() => host.State == EasyMultiState.InGame, 5000, host, guest);
 
         // 模拟 guest 掉线：关连接，中继保留其座位（宽限期内）。
+        var hostSawDisconnect = new List<string>();
+        host.PlayerDisconnected += hostSawDisconnect.Add;
         guest.Dispose();
-        PollSilence(host);
+        Pump(() => hostSawDisconnect.Contains("Guest"), 5000, host);
+        Assert.Contains("Guest", hostSawDisconnect);
 
-        // 同名重连 + 重新加入（房间已开局）。
+        // 同名重连 + 重新加入（房间已开局）；Host 能收到「重连」事件以便补发。
         var guest2 = EasyMultiClient.CreateWebSocket(Config("Guest"));
         ConnectAndRegister(guest2, relay.WsPort, host, guest2);
         string rejoined = "";
+        var hostSawReconnect = new List<string>();
         guest2.RoomJoined += c => rejoined = c;
+        host.PlayerReconnected += hostSawReconnect.Add;
         guest2.JoinRoom(code);
         Pump(() => guest2.State == EasyMultiState.InGame, 5000, host, guest2);
         Assert.Equal(code, rejoined);
+        Pump(() => hostSawReconnect.Contains("Guest"), 5000, host, guest2); // host 收到重连事件
+        Assert.Contains("Guest", hostSawReconnect);
 
         // 重连后能正常收发。
         var hostData = new List<(string From, string Data)>();
