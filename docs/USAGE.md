@@ -12,21 +12,38 @@
 
 ## 第 1 步：生成 token
 
-token 是这台中继的「门禁密码」，谁有它谁能连。只挡爬虫、不防专业黑客（项目定位如此）。
+token 是这台中继的「门禁密码」，谁有它谁能连。**它是你自己定的**，服务器不会发给你 ——
+生成一个随机串，第 2 步喂给中继，第 3 步填进客户端，两边对上就能连。
+
+Linux / macOS：
 
     openssl rand -hex 32
 
-记下来，第 2 步和第 3 步都要用。不要提交进代码仓库（用环境变量/构建注入）。
+Windows（PowerShell，系统自带的 5.1 就行）：
+
+    $b=[byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); ($b|%{$_.ToString('x2')}) -join ''
+
+记下来，第 2 步和第 3 步都要用。不要提交进代码仓库（用环境变量 / 构建注入）。
+
+> **只挡爬虫，不防专业黑客** —— 这不是免责声明，是架构的必然：第 3 步会把 token 编进你的
+> 游戏客户端，谁把游戏拆包都能抠出来。对局内容真要防，得靠你自己的对局协议加密，别押在它上面。
 
 ## 第 2 步：启动中继（传 token）
 
-中继就是一个进程，给它一个 token 就能跑：
+**部署到服务器**：不用编译，也不用装 .NET —— 镜像由 CI 构建好放在 `ghcr.io`，服务器只要
+Docker。拿 `docker-compose.yml` + `Caddyfile` + `.env` 三个文件，token 填进 `.env`，然后：
+
+    docker compose up -d
+
+完整步骤（域名、证书、防火墙、UDP 端口）见 [DEPLOY.md](DEPLOY.md)。跑起来之后重启自动拉起，**再也不用管它**。
+
+**本地开发 / 内网调试**，直接从源码跑更快：
 
     EASYMULTI_TOKEN=你的token dotnet run --project src/EasyMulti.Relay -c Release
 
-仓库里带了 Dockerfile，容器化就是 build + run 各一条（见 [DEPLOY.md](DEPLOY.md)）。跑起来之后重启自动拉起，**再也不用管它**。
-
-**怎么把这个进程放到你自己的服务器 / 云主机 / 内网机器上，是你自己的事**——买机器、配域名、开防火墙都不在本项目范围。我们只负责中继进程本身。
+**机器得你自己买**——云主机、域名这些不在本项目范围。但买完之后怎么跑起来，
+[DEPLOY.md](DEPLOY.md) 都写了：编排文件、TLS 反代、云主机防火墙（尤其 UDP 那条规则容易漏）、
+以及镜像怎么拉。
 
 > 网页要连 wss（HTTPS 页面只允许 wss），而中继只跑明文 ws：TLS 终结由你在前面加一层反代，见 [DEPLOY.md](DEPLOY.md)「反向代理」。
 
