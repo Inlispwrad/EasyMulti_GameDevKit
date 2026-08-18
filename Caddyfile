@@ -1,0 +1,7 @@
+# 把域名换成你自己的，并确保它的 A 记录指向这台机器的公网 IP。
+# Caddy 会自动申请并续期 Let's Encrypt 证书（需要 80 和 443 都放行）。
+yourgame.example.com {
+	# reverse_proxy 默认透传 Sec-WebSocket-Protocol —— 连接凭证就装在那个头里，
+	# 换 nginx 手写升级配置时千万别漏掉它，否则所有 WebSocket 都会被中继挡在门外。
+	reverse_proxy relay:7777
+}

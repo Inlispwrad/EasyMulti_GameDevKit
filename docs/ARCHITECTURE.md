@@ -52,7 +52,10 @@ EasyMulti 分四块：
 
 ## 关键实现决策
 
-- **零第三方依赖**：WebSocket 用 BCL `HttpListener` + `ClientWebSocket`，UDP 用 BCL `Socket`，JSON 用 `System.Text.Json`。目标是把「部署」降到 `docker build` 一下。
+- **零第三方依赖**：WebSocket 用 BCL `HttpListener` + `ClientWebSocket`，UDP 用 BCL `Socket`，JSON 是自己写的（`Json.cs`，约 380 行）。目标有两个：把「部署」降到 `docker build` 一下，以及把「接入」降到「把 `.cs` 拷进工程」。手写 JSON 正是为了后者——`System.Text.Json` 不在 `netstandard2.1` 里，而任何 JSON 包都会在开发者和「拷进去就能用」之间插进一个 NuGet/UPM 步骤和一份 IL2CPP 裁剪配置。
+- **SDK 目标框架是 `netstandard2.1` + C# 9**：这是「能被当作源码拷进现代 C# 引擎」的最大公约数——Unity 的编译器停在 C# 9，Godot 4.x / MonoGame / 纯 .NET 都能消费 netstandard2.1。中继本身不受此限，仍是 `net8.0`。
+- **SDK 分三层，游戏代码只碰最上层**：全局门面（静态类 `EasyMulti`＝产品名：`Init` 只写配置；`Client.Connect(名字)` / `Host.Open(名字, 房名, 人数[, HostMode])` 一句拿到角色实例，名字走正常调用链；「三层职责」直接做进类型——玩家侧没有房间管理，连房主名字都不暴露；指令在注册完成前自动排队；`Rejected` 与 `Disconnected` 分频道）→ 会话（`RelaySession`，1:1 映射线协议的状态机，测试和高级用法直接用它）→ 传输（`IClientTransport`：UDP / WebSocket 可换，未来接 Godot WebSocketPeer 也在这层）。命名空间是 `EasyMultiNet`——产品名让给了门面类。
+- **host 不是玩家，协议层就分开**：房间＝一条 host 连接 + N 个玩家席位。`players[]` / `playerCount` / `maxPlayers` 只算玩家，host 名单独走 `hostId`；host 掉线/回归有专门的 `HOST_DROPPED` / `HOST_BACK`。SDK 与界面因此不需要任何「±1 席位」「过滤 #host」的补丁。
 - **gameId 是房间的命名空间**：`games[gameId] → rooms[code]`。不同 gameId 互不可见，一台中继服务多个游戏。
 - **中继不施加游戏规则**：`START_GAME` 不校验人数/准备状态，只把房间标记为 `inGame`。准备状态、开局条件属于对局层（走 GAME_DATA）。这点刻意比 DevRelay 更「纯中继」——DevRelay 里 PokerRush 的开局条件耦合是它的已知包袱，EasyMulti 从设计上避开。
 - **token 是共享密钥不是身份**：一个 token 一个中继，谁有 token 谁连。防爬虫靠 token + 按 IP 的错误尝试限流，不防专业攻击。

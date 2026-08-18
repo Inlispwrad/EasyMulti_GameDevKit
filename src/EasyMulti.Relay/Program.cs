@@ -1,6 +1,6 @@
 #nullable enable
 
-using EasyMulti.Relay;
+using EasyMultiNet.Relay;
 
 // ── EasyMulti relay ──────────────────────────────────────────────────────────
 // A self-hostable relay for small multiplayer games. It only forwards data; game
@@ -12,6 +12,10 @@ return Run(args);
 
 static int Run(string[] args)
 {
+    // The logs are Chinese; without this a Windows console renders them as '?'.
+    try { Console.OutputEncoding = System.Text.Encoding.UTF8; }
+    catch (System.IO.IOException) { /* output is redirected — nothing to set */ }
+
     RelayConfig config;
     try
     {

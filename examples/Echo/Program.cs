@@ -1,15 +1,16 @@
 #nullable enable
 
-using EasyMulti.Client;
-using EasyMulti.Protocol;
+using EasyMultiNet;
+using MemoryPack;
 
 // ── EasyMulti Echo demo ──────────────────────────────────────────────────────
+// 全局门面（EasyMulti.Init → PlayerId → Client / Host → Poll）的最小用法。
 // One program, two roles:
-//   host   — a minimal "hostCore": registers, creates a room, then echoes every
-//            GAME_DATA it receives back to the sender (the authoritative loop is
-//            just this echo; a real game would tick its own simulation here).
-//   client — registers, joins a room by code, sends "ping N" every two seconds
-//            and prints whatever comes back.
+//   host   — a minimal "hostCore": opens a room, then echoes every message it
+//            receives back to the sender (the authoritative loop is just this
+//            echo; a real game would tick its own simulation here).
+//   client — joins a room by code, sends "ping N" every two seconds and prints
+//            whatever comes back.
 //
 // Run the relay first:
 //   dotnet run --project src/EasyMulti.Relay -- --token demo-token
@@ -23,47 +24,57 @@ static int Run(string[] args)
 {
     var opts = Options.Parse(args);
 
-    var config = new EasyMultiConfig(opts.Token, opts.Game, opts.Name);
-    var client = opts.Transport == "udp"
-        ? EasyMultiClient.CreateUdp(config)
-        : EasyMultiClient.CreateWebSocket(config);
+    EasyMulti.Init(new()
+    {
+        Token     = opts.Token,
+        GameId    = opts.Game,
+        RelayHost = "127.0.0.1",
+        RelayPort = opts.Port,
+        Transport = opts.Transport == "ws" ? EasyMultiTransport.Ws : EasyMultiTransport.Udp,
+        Codec     = new MemoryPackCodec(), // 默认壳：T 即消息通道，body 走 MemoryPack
+    });
 
-    client.Failed += reason => Console.Error.WriteLine("[Echo] 失败：" + reason);
-    client.Registered += () => Console.WriteLine($"[Echo] {opts.Name} 已注册");
-    client.RoomListChanged += rooms => Console.WriteLine($"[Echo] 大厅：{rooms.Count} 个房间");
-
+    EasyMultiClient? me = null;
     if (opts.Mode == "host")
     {
-        client.RoomCreated += code => Console.WriteLine($"[Echo] 房间已创建，房码 = {code}");
-        client.GameDataReceived += (from, data) =>
+        // 这是一个单独跑的 host 进程（核心后端形态），所以声明 StandAlone：
+        // 没有「玩家人格」，与它同名的玩家会被中继拒之门外。
+        EasyMultiHost room = EasyMulti.Host.Open(opts.Name, "Echo Room", players: 4, HostMode.StandAlone);
+        room.Opened += code => Console.WriteLine($"[Echo] 房间已创建，房码 = {code}");
+        room.PlayersChanged += players => Console.WriteLine("[Echo] 玩家：" + string.Join(", ", players));
+        room.Receive<string>((from, text) =>
         {
-            Console.WriteLine($"[Echo] Host 收到 {from}: {data}");
+            Console.WriteLine($"[Echo] Host 收到 {from}: {text}");
             // hostCore：权威循环在这里处理输入并回发结果。这里原样回显给发送者。
-            client.SendGameData("echo:" + data, to: from);
-        };
-        client.Registered += () => client.CreateRoom("Echo Room", 4);
+            room.Send(from, "echo:" + text);
+        });
+        room.Rejected += reason => Console.Error.WriteLine("[Echo] 被拒：" + reason);
+        room.Disconnected += reason => Console.Error.WriteLine("[Echo] 断线：" + reason);
     }
     else
     {
-        client.RoomJoined += code => Console.WriteLine($"[Echo] 已加入房间 {code}");
-        client.GameDataReceived += (from, data) =>
-            Console.WriteLine($"[Echo] {opts.Name} 收到 {from}: {data}");
-        client.Registered += () => client.JoinRoom(opts.Room);
+        me = EasyMulti.Client.Connect(opts.Name);
+        me.Joined += code => Console.WriteLine($"[Echo] 已加入房间 {code}");
+        me.Receive<string>(text => Console.WriteLine($"[Echo] {opts.Name} 收到：{text}"));
+        me.HostDropped += () => Console.WriteLine("[Echo] 房主掉线了，等他回来…");
+        me.HostBack += () => Console.WriteLine("[Echo] 房主回来了");
+        me.Rejected += reason => Console.Error.WriteLine("[Echo] 被拒：" + reason);
+        me.Disconnected += reason => Console.Error.WriteLine("[Echo] 断线：" + reason);
+        me.Join(opts.Room); // 不用等连上，注册完成后自动补发
     }
 
     Console.WriteLine($"[Echo] 连接中继 127.0.0.1:{opts.Port}（{opts.Transport}）");
-    client.Connect("127.0.0.1", opts.Port);
 
     int ping = 0;
     var nextPing = DateTime.UtcNow;
     var deadline = DateTime.UtcNow.AddSeconds(60);
     while (DateTime.UtcNow < deadline)
     {
-        client.Poll();
+        EasyMulti.Poll();
 
-        if (opts.Mode == "client" && client.State == EasyMultiState.InRoom && DateTime.UtcNow >= nextPing)
+        if (me is { RoomCode: not null } && DateTime.UtcNow >= nextPing)
         {
-            client.SendGameData($"ping {++ping}", mode: DeliveryMode.Reliable);
+            me.Send($"ping {++ping}"); // T=string 一条通道，MemoryPack 原生支持
             nextPing = DateTime.UtcNow.AddSeconds(2);
         }
 
@@ -71,7 +82,16 @@ static int Run(string[] args)
     }
 
     Console.WriteLine("[Echo] 演示结束");
+    EasyMulti.Shutdown();
     return 0;
+}
+
+/// <summary>对局数据的编解码器（SDK 零依赖，所以这 8 行住在你的工程里）。</summary>
+internal sealed class MemoryPackCodec : IPayloadCodec
+{
+    public byte[] Encode<T>(T value) => MemoryPackSerializer.Serialize(value);
+
+    public T Decode<T>(ReadOnlySpan<byte> body) => MemoryPackSerializer.Deserialize<T>(body)!;
 }
 
 internal static class Options

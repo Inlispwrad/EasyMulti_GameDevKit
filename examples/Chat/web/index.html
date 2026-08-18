@@ -70,7 +70,7 @@
     const latencyEl = document.getElementById("latency");
     const playersEl = document.getElementById("players");
 
-    const client = new EasyMulti.EasyMultiClient({ url, token, gameId: game, playerName: name });
+    const client = new EasyMulti.EasyMultiClient({ url, token, gameId: game, playerId: name });
     const latency = new Map(); // peer -> { rtt, n }
 
     function sys(msg) { const d = document.createElement("div"); d.className = "sys"; d.textContent = msg; log.appendChild(d); log.scrollTop = log.scrollHeight; }
@@ -103,7 +103,7 @@
     client.onClosed = () => { sys("连接已断开"); statusEl.textContent = "连接已断开"; };
 
     client.onGameData = (from, data) => {
-      let m; try { m = JSON.parse(data); } catch { return; }
+      let m; try { m = JSON.parse(new TextDecoder().decode(data)); } catch { return; }
       if (m.t === "chat") chatLine(m.name, m.text, m.name === name);
       else if (m.t === "ping") client.sendGameData(JSON.stringify({ t: "pong", id: m.id, sent: m.sent }), from);
       else if (m.t === "pong") {

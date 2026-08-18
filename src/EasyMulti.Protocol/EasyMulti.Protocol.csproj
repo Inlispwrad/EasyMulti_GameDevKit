@@ -1,11 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      netstandard2.1 + C# 9 is the widest target that every modern C# engine can consume
+      as *source*: Unity 2021.3 LTS and newer (its Roslyn caps out at C# 9), Godot 4.x,
+      MonoGame, Stride, and any .NET 6+ host. Do not raise either without checking Unity.
+    -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <!-- Implicit usings emit `global using`, which is C# 10. Every file declares its own. -->
+    <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>EasyMulti.Protocol</RootNamespace>
-    <!-- Zero third-party dependencies: this assembly only uses the BCL. -->
+    <RootNamespace>EasyMultiNet.Protocol</RootNamespace>
   </PropertyGroup>
+
+  <!-- Zero third-party dependencies, on purpose: the SDK must stay a source drop that
+       copies into a Unity or Godot project with no package step. JSON is hand-written
+       in Json.cs; everything else is BCL. -->
 
 </Project>

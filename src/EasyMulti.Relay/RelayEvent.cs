@@ -1,9 +1,9 @@
 #nullable enable
 
-using EasyMulti.Protocol;
-using EasyMulti.Relay.Transport;
+using EasyMultiNet.Protocol;
+using EasyMultiNet.Relay.Transport;
 
-namespace EasyMulti.Relay;
+namespace EasyMultiNet.Relay;
 
 public enum RelayEventKind
 {
@@ -20,6 +20,7 @@ public enum RelayEventKind
 public readonly record struct RelayEvent(
     RelayEventKind Kind,
     IRelayConnection Connection,
-    string? Text,        // Kind == Message: the wire JSON text; otherwise null
+    string? Text,        // Kind == Message: control JSON; null for binary game data
+    byte[]? Binary,      // Kind == Message: game-data frame [routing header + payload]; null for control JSON
     string Reason,       // Kind == Disconnected: human-readable cause; otherwise ""
     DeliveryMode Mode);  // Kind == Message: how it arrived (WebSocket is always Reliable)

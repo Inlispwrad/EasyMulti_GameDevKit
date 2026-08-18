@@ -13,12 +13,15 @@ EasyMulti 是从 PokerRush 的 **DevRelay**（一个开发期 WebSocket 中继�
 
 ## 特性
 
-- **双传输**：一条中继同时接受 **WebSocket**（浏览器 / Godot Web）与 **UDP**（Steam / NS / 桌面）。两者**天然互通**——一个 WebSocket 客户端可以加入一个 UDP Host 开的房间。
+- **双传输**：一条中继同时接受 **WebSocket**（浏览器网页 / WASM 导出）与 **UDP**（Steam / NS / 桌面）。两者**天然互通**——一个 WebSocket 客户端可以加入一个 UDP Host 开的房间。客户端一个配置项切换：`Transport = EasyMultiTransport.Udp / Ws / Wss`，HTTPS 页面用 `Wss`（TLS 由反代终结，见 [DEPLOY.md](docs/DEPLOY.md)）。
 - **gameId 路由**：一台中继服务多个游戏。每个 gameId 是独立的房间命名空间，互不可见。
 - **房间即 Host，大厅即房间列表**：每个 Host 建一个房间，按 gameId 拉房间列表，天然形成游戏大厅。
 - **共享 token 鉴权**：部署时设一个 token，所有客户端携带它才能连上。**只防爬虫、不防专业黑客**（项目定位如此）。
-- **零第三方依赖**：只靠 .NET 8 BCL（HttpListener + ClientWebSocket + Socket），docker build 即可跑。
+- **SDK 就是源码，拷进项目就能用**：15 个 `.cs`、`netstandard2.1` + C# 9，Unity 2021.3+ / Godot 4.x / 纯 .NET 通吃。没有 NuGet 包、没有 DLL、没有 submodule。
+- **傻瓜式全局门面**：`EasyMulti.Init(...)` 一次 → `EasyMulti.Client.Connect("Alice")`（玩家：进出房 + 收发消息）/ `EasyMulti.Host.Open("Alice", 房名, 人数)`（房主：开房 + 管人 + 跑核心逻辑），一句拿到角色实例。**host 不是玩家**——不进名单、不占容量，玩家侧永远不需要判断「我是不是房主」；单独部署的核心后端用 `HostMode.StandAlone` 声明。
+- **零第三方依赖**：SDK 只用 BCL（Socket + ClientWebSocket），连 JSON 都是自带的（`Json.cs`）；中继另外只多用一个 BCL 的 `HttpListener`。`docker build` 即可跑。
 - **UDP 可靠通道**：自带 ack + 重传 + 分片重组，控制消息可靠有序，高频游戏状态可走不可靠通道。
+- **T 就是消息通道，零膨胀直通**：`Send<MoveMsg>` 出、`Receive<MoveMsg>` 进，默认壳按类型路由（未订阅静默丢）；body 走可插拔 `Codec`（配置项之一，默认推荐 MemoryPack），中继只读几字节路由皮、payload 一个字节不解析，没有 base64、没有 JSON 信封。
 
 ## 快速开始
 
@@ -49,44 +52,107 @@ docker build -t easymulti .
 docker run -d -p 7777:7777/tcp -p 7777:7777/udp -e EASYMULTI_TOKEN=your-secret easymulti
 ```
 
+要给浏览器 / WASM 用就得上 `wss://`，仓库根目录有现成的 `docker-compose.yml` + `Caddyfile`
+（中继 + Caddy 自动签证书）：
+
+```bash
+cp .env.example .env && vim .env    # 填 token
+vim Caddyfile                       # 换成你的域名
+docker compose up -d
+```
+
 ## 仓库结构
 
 ```
 src/
-  EasyMulti.Protocol/   线协议 DTO + JSON 编解码 + UDP 帧与可靠通道（UdpPeer）
-  EasyMulti.Relay/      中继服务器（可执行程序）
-  EasyMulti.Client/     客户端 SDK（WebSocket / UDP 双传输，host 与 client 共用）
+  EasyMulti.Protocol/   线协议 DTO + 自带 JSON 编解码 + UDP 帧与可靠通道（UdpPeer）
+  EasyMulti.Relay/      中继服务器（可执行程序，net8.0）
+  EasyMulti.Client/     客户端 SDK：EasyMulti 全局门面（Client / Host）+ RelaySession 低层 + 双传输
+                        ↑ Protocol + Client 这两个目录里的 15 个 .cs 就是「SDK」，
+                          netstandard2.1 + C# 9，拷进 Unity / Godot 工程即可
+samples/
+  ChatGodot/            Godot 4.7.1 聊天室 —— 全项目只有 Net.cs 一个文件碰中继
 examples/
   Echo/                 最小 hostCore + client 示例
   Chat/                 聊天室 + 实时延迟（终端 UDP + 浏览器 WS，含基准工具）
 tests/
-  EasyMulti.Tests/      集成测试（WS 与 WS、UDP 与 UDP、WS 与 UDP 互通、鉴权、隔离、分片）
+  EasyMulti.Tests/      集成测试 + JSON 编解码测试（互通、鉴权、隔离、分片、转义、恶意输入）
 ```
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
+| [samples/ChatGodot](samples/ChatGodot/README.md) | **看这个最快**：Godot 4.7.1 聊天室，全项目只有一页碰中继 |
 | [docs/USAGE.md](docs/USAGE.md) | **上手**：token → 部署 → 客户端内置配置，三步就完 |
 | [docs/BENCHMARK.md](docs/BENCHMARK.md) | 延迟基准：UDP ~5ms、WS↔UDP ~10ms、WS↔WS ~17ms |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | 线协议：消息集合、字段语义、UDP 帧格式 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 设计：传输抽象、事件循环、可靠通道、互通为何免费 |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | 部署：配置来源、Docker、反向代理、安全边界 |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | 部署：配置来源、Docker / Compose、反向代理与 wss、云主机防火墙、安全边界 |
 
 ## 你的代码长什么样
 
+理想形态是：**整个游戏只有一个文件碰中继**，其余全是前端和 Core。
+[samples/ChatGodot/Net.cs](samples/ChatGodot/Net.cs) 就是那一个文件——四行常量加三句话：
+
 ```csharp
-using EasyMulti.Client;
+public override void _Ready() => EasyMulti.Init(new()
+{
+    Token     = "demo-token",
+    GameId    = "chat-godot",
+    RelayHost = "127.0.0.1",
+    RelayPort = 7777,
+    Codec     = new MemoryPackCodec(),   // 浏览器 / WASM 再加 Transport = EasyMultiTransport.Wss
+});
 
-var cfg = new EasyMultiConfig(token: "demo-token", gameId: "my-game", playerName: "Host");
-var client = EasyMultiClient.CreateUdp(cfg);   // 或 CreateWebSocket
-
-client.RoomCreated += code => Console.WriteLine("房码 " + code);
-client.GameDataReceived += (from, data) => { /* 权威循环：处理输入、回发结果 */ };
-
-client.Connect("127.0.0.1", 7777);
-// 主循环里每帧调用 client.Poll()，注册成功后 client.CreateRoom() 即成为 Host
+public override void _Process(double delta) => EasyMulti.Poll();
+public override void _ExitTree()            => EasyMulti.Shutdown();
 ```
+
+`EasyMulti` 就是产品本身：`Client.Connect` / `Host.Open` 一句拿到角色实例，三层职责已经分好：
+
+```
+EasyMultiClient —— 玩家（EasyMulti.Client.Connect("Alice") 返回）
+  动作（你调用）                     状态（你随时可问）      频道（你订阅，消息推给你）
+  ─────────────────────────         ──────────────────     ────────────────────────────────
+  RefreshRooms()   要房间列表        Id       你的 playerId    RoomsChanged(rooms) 列表来了（只在你问过之后）
+  Join(roomCode)   申请进房间        Connected 认下了没      Joined(roomCode)    进房间了 ← 游戏逻辑从这开始
+  Leave()          退房回大厅        RoomCode 当前房码       Left                退房了，回到大厅
+  Send<T>(value)   直接发消息对象    （连上中继就等于在      Receive<T>(handler) 订类型通道：房主发的 T 从这进
+  Disconnect()     下线               大厅，没有频道去       HostDropped / HostBack 房主掉线 / 回来了
+                                      播报它）              Rejected / Disconnected 被拒（连接还在）/ 断线
+
+EasyMultiHost —— 房主（EasyMulti.Host.Open("Alice", 房名, 人数[, HostMode.StandAlone])；一条连接＝一间房）
+  动作（你调用）                     频道（你订阅，消息推给你）
+  ─────────────────────────         ────────────────────────────────
+  Send<T>(id, value)   发给一个人    Opened(roomCode)        房间开好了，这是房码
+  Broadcast<T>(value)  发给所有人    PlayersChanged(players) 玩家名单变了（房主从来不在里面）
+  Kick(player)         请人出去      PlayerDropped(name)     玩家掉线（座位保留）
+  Lock()               封盘不再进人  PlayerBack(name)        玩家重连坐回 ← 在这补发局面
+  Close()              解散房间      Receive<T>((who, v))    订类型通道 ← 核心逻辑从这开始
+                                     Rejected / Disconnected 被拒 / 断线
+```
+
+所有「动作」**都不必等连上**——没注册完就先攒着，注册成功后按调用顺序补发。
+
+于是「自己开房自己玩」的写法是 **先把 Host 开起来，再用普通 Client 接进去**：
+
+```csharp
+// 我来开房（名字和我的玩家名一样 = 我顺手开的；连接名自动带 #host，互不打架）
+var room = EasyMulti.Host.Open(myName, title, players: 8);
+room.Opened += code => { core = new ChatCore(room); me.Join(code); };
+
+// 我这个玩家 —— 加自己开的房和加别人的房，是同一句
+var me = EasyMulti.Client.Connect(myName);
+me.Join(code);
+
+// 说话。发到哪儿去不是玩家该操心的事
+me.Send(text);
+```
+
+**玩家侧因此没有一句「我是不是房主」的判断**，本地房主和远端房主走的路完全一样；
+想改成独立服务器，就是把 Host 那半边挪进独立进程、开房时声明 `HostMode.StandAlone`
+（中继会替它拒掉同名玩家），玩家侧一行都不用改。
 
 ## 安全边界
 

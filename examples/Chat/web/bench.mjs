@@ -24,14 +24,14 @@ const host = flag("host", null) !== null;
 const count = parseInt(flag("count", "200"), 10);
 const interval = parseInt(flag("interval", "20"), 10);
 
-const client = new EasyMultiClient({ url, token, gameId: game, playerName: name });
+const client = new EasyMultiClient({ url, token, gameId: game, playerId: name });
 const rtts = [];
 let pingId = 0;
 let pongCount = 0;
 const start = Date.now();
 
 client.onGameData = (from, data) => {
-  let m; try { m = JSON.parse(data); } catch { return; }
+  let m; try { m = JSON.parse(new TextDecoder().decode(data)); } catch { return; }
   if (m.t === "ping") {
     client.sendGameData(JSON.stringify({ t: "pong", id: m.id, sent: m.sent }), from);
   } else if (m.t === "pong") {

@@ -5,7 +5,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>EasyMulti.Relay</RootNamespace>
+    <RootNamespace>EasyMultiNet.Relay</RootNamespace>
     <AssemblyName>easymulti-relay</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
@@ -13,6 +13,10 @@
   <!-- Zero third-party dependencies: WebSocket via BCL HttpListener, UDP via BCL Socket. -->
   <ItemGroup>
     <ProjectReference Include="../EasyMulti.Protocol/EasyMulti.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EasyMulti.Tests" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Godot.NET.Sdk/4.7.1">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <!--
+    The SDK is pulled in as plain source — no NuGet package, no DLL, no submodule.
+    In a real project you would copy these .cs files into res://EasyMulti/ instead;
+    this sample globs them from the repo so the sample can never drift from the source.
+  -->
+  <ItemGroup>
+    <PackageReference Include="MemoryPack" Version="1.21.4" />
+    <Compile Include="../../src/EasyMulti.Protocol/*.cs" />
+    <Compile Include="../../src/EasyMulti.Client/*.cs" />
+  </ItemGroup>
+
+</Project>

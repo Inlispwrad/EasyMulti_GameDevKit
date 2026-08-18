@@ -1,304 +1,143 @@
 #nullable enable
 
-using EasyMulti.Protocol;
+using System;
+using System.Collections.Generic;
+using EasyMultiNet.Protocol;
 
-namespace EasyMulti.Client;
-
-public enum EasyMultiState
+namespace EasyMultiNet
 {
-    Disconnected,
-    Connecting,
-    Unregistered,
-    Lobby,
-    InRoom,
-    InGame,
-}
-
-/// <summary>
-/// The client state machine for the EasyMulti relay: connect → REGISTER → create/join a
-/// room → START_GAME → exchange GAME_DATA. Works for both players and hosts — a host is
-/// simply the client that calls <see cref="CreateRoom"/> (and therefore is players[0]).
-/// <para>
-/// <b>Transport-agnostic and game-agnostic:</b> it depends only on
-/// <see cref="IClientTransport"/> and treats <c>GAME_DATA.data</c> as an opaque string.
-/// Single-threaded — <see cref="Poll"/> runs on the caller's loop and all events fire
-/// inside it.
-/// </para>
-/// </summary>
-public sealed class EasyMultiClient : IDisposable
-{
-    private readonly IClientTransport _transport;
-    private readonly List<string> _roomPlayers = new();
-    private readonly List<RoomInfo> _rooms = new();
-    private bool _open;
-
-    public EasyMultiClient(EasyMultiConfig config, IClientTransport transport)
+    /// <summary>大厅里的一间房。人数和容量都只算玩家 —— 房主不是玩家，不占数。</summary>
+    public readonly struct Room
     {
-        Config = config;
-        _transport = transport ?? throw new ArgumentNullException(nameof(transport));
-        _transport.Opened += OnOpened;
-        _transport.Closed += OnClosed;
-        _transport.Received += OnReceived;
-    }
-
-    /// <summary>Convenience: WebSocket-backed client.</summary>
-    public static EasyMultiClient CreateWebSocket(EasyMultiConfig config) =>
-        new(config, new WebSocketClientTransport());
-
-    /// <summary>Convenience: UDP-backed client.</summary>
-    public static EasyMultiClient CreateUdp(EasyMultiConfig config) =>
-        new(config, new UdpClientTransport());
-
-    public EasyMultiConfig Config { get; }
-
-    public EasyMultiState State { get; private set; } = EasyMultiState.Disconnected;
-
-    /// <summary>Current room code; null when not in a room.</summary>
-    public string? GameCode { get; private set; }
-
-    /// <summary>Room members, [0] is the host. Empty outside a room.</summary>
-    public IReadOnlyList<string> RoomPlayers => _roomPlayers;
-
-    /// <summary>Current lobby snapshot for this game.</summary>
-    public IReadOnlyList<RoomInfo> Rooms => _rooms;
-
-    /// <summary>Rooms still joinable (not yet started). The lobby's "筛选进行中的房间" helper.</summary>
-    public IReadOnlyList<RoomInfo> JoinableRooms => _rooms.Where(r => !r.InGame).ToList();
-
-    public string? HostName => _roomPlayers.Count > 0 ? _roomPlayers[0] : null;
-
-    public bool IsHost => _roomPlayers.Count > 0 && _roomPlayers[0] == Config.PlayerName;
-
-    // ── Events (all fired inside Poll) ────────────────────────────────────────
-
-    public event Action? Registered;
-    public event Action<IReadOnlyList<RoomInfo>>? RoomListChanged;
-    public event Action<string>? RoomCreated;
-    public event Action<string>? RoomJoined;
-    public event Action<IReadOnlyList<string>>? RoomPlayersChanged;
-
-    /// <summary>某成员掉线（座位仍保留）。参数是 playerName。</summary>
-    public event Action<string>? PlayerDisconnected;
-
-    /// <summary>某成员重连坐回（座位重新接上）。参数是 playerName。Host 可借此给他补发局面。</summary>
-    public event Action<string>? PlayerReconnected;
-
-    /// <summary>房主换了（自动转交）。参数是新 host 的 playerName；等于自己名字时表示「我是新房主」。</summary>
-    public event Action<string>? HostChanged;
-
-    public event Action? GameStarted;
-    public event Action? LeftRoom;
-    public event Action<string, string>? GameDataReceived;
-    public event Action<string>? Failed;
-
-    // ── Outbound ──────────────────────────────────────────────────────────────
-
-    /// <summary>Connect to the relay. On success REGISTER is sent automatically.</summary>
-    public void Connect(string host, int port)
-    {
-        if (State != EasyMultiState.Disconnected) throw new InvalidOperationException("已经连过了");
-        State = EasyMultiState.Connecting;
-        _transport.Connect(host, port);
-    }
-
-    /// <summary>Drive the transport and fire events. Call every 10–20 ms.</summary>
-    public void Poll() => _transport.Poll();
-
-    public void RefreshRooms() => Send(new ListRoomsRequest());
-
-    /// <param name="autoHostTransfer">房主掉线是否自动顺延给下一位在线成员（专服应设 false）。</param>
-    public void CreateRoom(string? roomName = null, int? maxPlayers = null, bool? autoHostTransfer = null) =>
-        Send(new CreateRoomRequest(roomName, maxPlayers, autoHostTransfer));
-
-    public void JoinRoom(string gameCode) => Send(new JoinRoomRequest(gameCode));
-
-    public void LeaveRoom() => Send(new LeaveRoomRequest());
-
-    /// <summary>Remove a member from the room. Host only.</summary>
-    public void Kick(string playerName) => Send(new KickRequest(playerName));
-
-    /// <summary>Mark the room as in-game. Host only.</summary>
-    public void StartGame() => Send(new StartGameRequest());
-
-    /// <summary>Send one game-layer payload. Never echoed back to the sender.</summary>
-    public void SendGameData(string data, string? to = null, DeliveryMode mode = DeliveryMode.Reliable) =>
-        Send(new GameDataRequest(data, to), mode);
-
-    public void Dispose()
-    {
-        _open = false;
-        _transport.Dispose();
-        State = EasyMultiState.Disconnected;
-    }
-
-    // ── Inbound ───────────────────────────────────────────────────────────────
-
-    private void OnOpened()
-    {
-        _open = true;
-        State = EasyMultiState.Unregistered;
-        Send(new RegisterRequest(Config.Token, Config.GameId, Config.PlayerName));
-    }
-
-    private void OnClosed(string reason)
-    {
-        _open = false;
-        State = EasyMultiState.Disconnected;
-        _roomPlayers.Clear();
-        _rooms.Clear();
-        GameCode = null;
-        Failed?.Invoke(reason);
-    }
-
-    private void OnReceived(string json, DeliveryMode mode)
-    {
-        if (!RelayCodec.TryReadType(json, out string type)) return;
-
-        switch (type)
+        public Room(string code, string name, int players, int capacity, bool started)
         {
-            case RelayMessageType.RegisterSuccess:
-                State = EasyMultiState.Lobby;
-                Registered?.Invoke();
-                break;
-
-            case RelayMessageType.RegisterFailed:
-                if (RelayCodec.TryDeserialize(json, out RegisterFailedMessage regFail))
-                {
-                    Fail("注册失败：" + regFail.Reason);
-                }
-
-                break;
-
-            case RelayMessageType.RoomList:
-            case RelayMessageType.LobbyUpdated:
-                if (RelayCodec.TryDeserialize(json, out RoomListMessage list))
-                {
-                    SetRooms(list.Rooms);
-                }
-
-                break;
-
-            case RelayMessageType.RoomCreated:
-                if (RelayCodec.TryDeserialize(json, out RoomCreatedMessage created))
-                {
-                    GameCode = created.GameCode;
-                    State = EasyMultiState.InRoom;
-                    SetRoomPlayers(new[] { Config.PlayerName });
-                    RoomCreated?.Invoke(created.GameCode);
-                }
-
-                break;
-
-            case RelayMessageType.JoinSuccess:
-                if (RelayCodec.TryDeserialize(json, out JoinSuccessMessage joined))
-                {
-                    GameCode = joined.GameCode;
-                    State = EasyMultiState.InRoom;
-                    SetRoomPlayers(joined.Players);
-                    RoomJoined?.Invoke(joined.GameCode);
-                }
-
-                break;
-
-            case RelayMessageType.JoinFailed:
-                if (RelayCodec.TryDeserialize(json, out JoinFailedMessage joinFail))
-                {
-                    Fail("加入房间失败：" + joinFail.Reason);
-                }
-
-                break;
-
-            case RelayMessageType.PlayerJoined:
-                if (RelayCodec.TryDeserialize(json, out PlayerJoinedMessage pj))
-                {
-                    SetRoomPlayers(pj.Players);
-                }
-
-                break;
-
-            case RelayMessageType.PlayerLeft:
-                if (RelayCodec.TryDeserialize(json, out PlayerLeftMessage pl))
-                {
-                    SetRoomPlayers(pl.Players);
-                }
-
-                break;
-
-            case RelayMessageType.PlayerDisconnected:
-                // 成员掉线但座位保留：名单不变（他还在 players 里）。
-                if (RelayCodec.TryDeserialize(json, out PlayerDisconnectedMessage pd))
-                {
-                    SetRoomPlayers(pd.Players);
-                    PlayerDisconnected?.Invoke(pd.PlayerName);
-                }
-
-                break;
-
-            case RelayMessageType.PlayerReconnected:
-                if (RelayCodec.TryDeserialize(json, out PlayerReconnectedMessage pr))
-                {
-                    SetRoomPlayers(pr.Players);
-                    PlayerReconnected?.Invoke(pr.PlayerName);
-                }
-
-                break;
-
-            case RelayMessageType.HostChanged:
-                if (RelayCodec.TryDeserialize(json, out HostChangedMessage hc))
-                {
-                    SetRoomPlayers(hc.Players);
-                    HostChanged?.Invoke(hc.HostName);
-                }
-
-                break;
-
-            case RelayMessageType.GameStarted:
-                State = EasyMultiState.InGame;
-                GameStarted?.Invoke();
-                break;
-
-            case RelayMessageType.LeaveSuccess:
-                State = EasyMultiState.Lobby;
-                GameCode = null;
-                _roomPlayers.Clear();
-                LeftRoom?.Invoke();
-                break;
-
-            case RelayMessageType.GameData:
-                if (RelayCodec.TryDeserialize(json, out GameDataMessage data))
-                {
-                    GameDataReceived?.Invoke(data.From, data.Data);
-                }
-
-                break;
+            Code = code;
+            Name = name;
+            Players = players;
+            Capacity = capacity;
+            Started = started;
         }
+
+        public readonly string Code;
+        public readonly string Name;
+        public readonly int Players;
+        public readonly int Capacity;
+        public readonly bool Started;
     }
 
-    private void SetRoomPlayers(IReadOnlyList<string> players)
+    /// <summary>
+    /// 玩家。进得去、出得来、能收发消息，仅此而已 —— 分成<b>动作</b>（你调用）和
+    /// <b>频道</b>（你订阅，消息推给你）两组。
+    /// <para>
+    /// 这里<b>没有</b>开房、踢人、成员名单，连「房主叫什么名字」都不需要知道：
+    /// 房间怎么管，玩家不关心；消息发到哪儿去，由 SDK 决定（实际是定向发给房主，
+    /// 由房主定序后广播回来）。这就是三层职责里的 Client 层。
+    /// </para>
+    /// <para>由 <see cref="EasyMulti.Client.Connect"/> 开出来；事件全部在 <see cref="EasyMulti.Poll"/> 里、同一个线程上回调。</para>
+    /// </summary>
+    public sealed class EasyMultiClient
     {
-        if (_roomPlayers.SequenceEqual(players)) return;
-        _roomPlayers.Clear();
-        _roomPlayers.AddRange(players);
-        RoomPlayersChanged?.Invoke(_roomPlayers);
-    }
+        private readonly RelaySession _session;
+        private readonly Action _close;
+        private readonly PayloadRouter _router = new PayloadRouter();
 
-    private void SetRooms(IReadOnlyList<RoomInfo> rooms)
-    {
-        _rooms.Clear();
-        _rooms.AddRange(rooms);
-        RoomListChanged?.Invoke(_rooms);
-    }
+        internal EasyMultiClient(RelaySession session, Action close)
+        {
+            _session = session;
+            _close = close;
+            _session.RoomListChanged  += rooms      => RoomsChanged?.Invoke(ToRooms(rooms));
+            _session.RoomJoined       += code       => Joined?.Invoke(code);
+            _session.LeftRoom         += ()         => Left?.Invoke();
+            _session.GameDataReceived += (from, data) => _router.Dispatch(from, data); // 只可能来自房主
+            _session.HostDropped      += ()         => HostDropped?.Invoke();
+            _session.HostBack         += ()         => HostBack?.Invoke();
+            _session.Rejected         += reason     => Rejected?.Invoke(reason);
+            _session.Disconnected     += reason     => Disconnected?.Invoke(reason);
+        }
 
-    private void Fail(string reason)
-    {
-        // Terminal for the current session intent, but keep the connection open so the
-        // caller can react (e.g. re-register under a different name).
-        Failed?.Invoke(reason);
-    }
+        // ── 状态：你随时可以问它 ─────────────────────────────────────────
 
-    private void Send(object message, DeliveryMode mode = DeliveryMode.Reliable)
-    {
-        if (!_open) throw new InvalidOperationException("还没连上中继");
-        _transport.Send(RelayCodec.Serialize(message), mode);
+        /// <summary>你的 playerId —— 身份标识，不是显示名（显示名是游戏层自己的事）。</summary>
+        public string Id => _session.Config.PlayerId;
+
+        /// <summary>
+        /// 中继已经认下你了吗。<b>连上中继就等于在大厅</b>，所以这一个值就说明了
+        /// 「我在不在线、在不在大厅」——不需要一个频道来播报它。
+        /// <para>进没进房间看 <see cref="Joined"/> / <see cref="Left"/>，那是真正的状态转移。</para>
+        /// </summary>
+        public bool Connected => _session.IsRegistered;
+
+        /// <summary>当前房间的房码；不在房间里时是 null。</summary>
+        public string? RoomCode => _session.GameCode;
+
+        // ── 动作：你调用它 ───────────────────────────────────────────────
+        //
+        // 前三个都不必等连上：还没注册完就先攒着，注册成功后按调用顺序补发。
+
+        /// <summary>要一份房间列表。结果走 <see cref="RoomsChanged"/> 回来。中继绝不主动推。</summary>
+        public void RefreshRooms() => _session.RefreshRooms();
+
+        /// <summary>申请进这个房间。成功走 <see cref="Joined"/> 回来，被拒走 <see cref="Rejected"/>。</summary>
+        public void Join(string roomCode) => _session.JoinRoom(roomCode);
+
+        /// <summary>退出房间回大厅。走 <see cref="Left"/> 回来。</summary>
+        public void Leave() => _session.LeaveRoom();
+
+        /// <summary>
+        /// <b>玩家的游戏逻辑只需要这个</b>：把一个消息对象交出去。
+        /// <b>T 就是消息通道</b>：对端只有 <c>Receive&lt;T&gt;</c> 了同一个 T 才会收到。
+        /// 默认壳走 <see cref="EasyMulti.Codec"/>（推荐 MemoryPack），管道零膨胀直通。
+        /// 发到哪儿去不是玩家该操心的事。没进房间时是空操作。
+        /// </summary>
+        public void Send<T>(T value)
+        {
+            string host = _session.HostId ?? "";
+            if (host.Length == 0) return;
+            _session.SendGameData(PayloadRouter.EncodeMessage(value), to: host);
+        }
+
+        /// <summary>
+        /// 订一条类型通道：房主发来的 <typeparamref name="T"/> 消息从这里进。
+        /// 没订阅的类型静默丢弃；同一 T 多次订阅＝叠加。
+        /// </summary>
+        public void Receive<T>(Action<T> handler) => _router.Register<T>((_, value) => handler(value));
+
+        /// <summary>下线（回主菜单/切账号）。想重新上线就再 <see cref="EasyMulti.Client.Connect"/> 一个。</summary>
+        public void Disconnect() => _close();
+
+        // ── 频道：你订阅它，消息推给你 ─────────────────────────────────────
+
+        /// <summary>房间列表来了。<b>只会在你调过 <see cref="RefreshRooms"/> 之后触发。</b></summary>
+        public event Action<IReadOnlyList<Room>>? RoomsChanged;
+
+        /// <summary>进房间了。<b>游戏逻辑从这里开始。</b>参数是房码。</summary>
+        public event Action<string>? Joined;
+
+        /// <summary>退出房间了，回到大厅。</summary>
+        public event Action? Left;
+
+        /// <summary>房主掉线了（对局暂停，等他回来或散伙）。你还在房间里，座位没动。</summary>
+        public event Action? HostDropped;
+
+        /// <summary>房主回来了，对局继续。</summary>
+        public event Action? HostBack;
+
+        /// <summary>某个请求被拒了：名字被占、房间满了、房间已开局之类。连接还在，可以重试。</summary>
+        public event Action<string>? Rejected;
+
+        /// <summary>与中继的连接断了。参数是原因。</summary>
+        public event Action<string>? Disconnected;
+
+        private static Room[] ToRooms(IReadOnlyList<RoomInfo> rooms)
+        {
+            var result = new Room[rooms.Count];
+            for (int i = 0; i < rooms.Count; i++)
+            {
+                RoomInfo r = rooms[i];
+                result[i] = new Room(r.Code, r.Name, r.PlayerCount, r.MaxPlayers, r.InGame);
+            }
+
+            return result;
+        }
     }
 }

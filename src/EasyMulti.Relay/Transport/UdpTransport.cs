@@ -3,16 +3,22 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using EasyMulti.Protocol;
-using EasyMulti.Relay;
+using EasyMultiNet.Protocol;
+using EasyMultiNet.Relay;
 
-namespace EasyMulti.Relay.Transport;
+namespace EasyMultiNet.Relay.Transport;
 
 /// <summary>
 /// UDP transport. One bound socket, one <see cref="UdpConnection"/> per client endpoint
-/// (adopted lazily on the first datagram — NAT keeps the source port stable for the
-/// session). Each connection owns a <see cref="UdpPeer"/> that provides reliable in-order
-/// delivery for control traffic and best-effort datagrams for game state.
+/// (NAT keeps the source port stable for the session). Each connection owns a
+/// <see cref="UdpPeer"/> that provides reliable in-order delivery for control traffic and
+/// best-effort datagrams for game state.
+/// <para>
+/// UDP 没有握手，所以协议自己造了一个：陌生地址发来的**第一个**数据报必须是带凭证的
+/// HELLO 帧（<c>FrameFlags.Hello</c>）。不是 HELLO、解不开、或凭证验不过 —— 一律丢弃，
+/// **不创建 UdpConnection、不创建 UdpPeer、不入表、不发 Connected 事件**。所以匿名来源
+/// 无法让中继为它保留任何东西。
+/// </para>
 /// </summary>
 public sealed class UdpTransport : IRelayTransport
 {
@@ -20,6 +26,7 @@ public sealed class UdpTransport : IRelayTransport
     private readonly UdpPeerOptions _peerOptions;
     private Socket? _socket;
     private Action<RelayEvent>? _enqueue;
+    private Func<RegisterRequest, string, string?>? _authenticate;
     private readonly Dictionary<IPEndPoint, UdpConnection> _connections = new();
     private readonly object _gate = new();
     private volatile bool _stopped;
@@ -30,9 +37,10 @@ public sealed class UdpTransport : IRelayTransport
         _peerOptions = peerOptions ?? new UdpPeerOptions();
     }
 
-    public void Start(Action<RelayEvent> enqueue)
+    public void Start(Action<RelayEvent> enqueue, Func<RegisterRequest, string, string?> authenticate)
     {
         _enqueue = enqueue;
+        _authenticate = authenticate;
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
         // A bounded receive timeout lets Stop() signal shutdown without calling
@@ -116,8 +124,8 @@ public sealed class UdpTransport : IRelayTransport
                     return;
                 }
 
-                UdpConnection connection = GetOrCreate((IPEndPoint)remote);
-                connection.Peer.HandleDatagram(buffer, length);
+                UdpConnection? connection = Accept((IPEndPoint)remote, buffer, length);
+                connection?.Peer.HandleDatagram(buffer, length);
             }
         }
         finally
@@ -127,23 +135,70 @@ public sealed class UdpTransport : IRelayTransport
         }
     }
 
-    private UdpConnection GetOrCreate(IPEndPoint endpoint)
+    /// <summary>
+    /// 已知地址直接返回它的连接；陌生地址必须先用一个合格的 HELLO 把自己证明了才会被建出来。
+    /// 返回 null＝这个数据报到此为止，没有任何状态被创建。
+    /// </summary>
+    private UdpConnection? Accept(IPEndPoint endpoint, byte[] data, int length)
     {
         lock (_gate)
         {
             if (_connections.TryGetValue(endpoint, out UdpConnection? existing))
             {
-                return existing;
+                // 已经关掉、还没被 Tick 清走的旧连接不能挡住同一个地址的重连
+                // （NAT 后重连很容易拿到同一个源端口）。就地摘掉，让它重新走门口。
+                if (!existing.IsClosed) return existing;
+                _connections.Remove(endpoint);
             }
+        }
 
-            var connection = new UdpConnection(endpoint, _socket!, _enqueue!, _peerOptions);
+        if (!TryReadHello(data, length, out RegisterRequest credentials))
+        {
+            return null; // 不是连接请求：陌生地址没资格让我们记住它
+        }
+
+        if (_authenticate!(credentials, endpoint.ToString()) is string refusal)
+        {
+            // 回一句为什么（Bye + reason），但仍然什么都不建。回包比来包小，没有放大价值。
+            Refuse(endpoint, refusal);
+            return null;
+        }
+
+        lock (_gate)
+        {
+            // 双检：同一个地址的两个 HELLO 可能挨着进来（HELLO 会重传）。
+            if (_connections.TryGetValue(endpoint, out UdpConnection? raced)) return raced;
+
+            var connection = new UdpConnection(endpoint, _socket!, credentials, _enqueue!, _peerOptions);
             _connections[endpoint] = connection;
-            // Adopt the endpoint as a connection before its first message is processed,
-            // so the relay core registers it (the Connected event precedes the Message
-            // event because both are enqueued sequentially from this thread).
-            _enqueue!(new RelayEvent(RelayEventKind.Connected, connection, null, "", DeliveryMode.Reliable));
+            // Connected 事件先于这条 HELLO 产生的任何后续消息入队（都来自这个线程，顺序有保证）。
+            _enqueue!(new RelayEvent(RelayEventKind.Connected, connection, null, null, "", DeliveryMode.Reliable));
             return connection;
         }
+    }
+
+    /// <summary>这个数据报是不是一个自带凭证的连接请求。凭证必须一个包装得下（不接受分片）。</summary>
+    private static bool TryReadHello(byte[] data, int length, out RegisterRequest credentials)
+    {
+        credentials = default!;
+        if (!UdpFrame.TryRead(data.AsSpan(0, length), out FrameHeader header, out ReadOnlySpan<byte> payload))
+        {
+            return false;
+        }
+
+        if ((header.Flags & FrameFlags.Hello) == 0 || header.FragCount > 1) return false;
+        return RelayCodec.TryDeserialize(Encoding.UTF8.GetString(payload.ToArray()), out credentials);
+    }
+
+    /// <summary>告诉对方为什么进不来。无状态：一个 Bye 帧带上理由，发完就忘。</summary>
+    private void Refuse(IPEndPoint endpoint, string reason)
+    {
+        byte[] why = Encoding.UTF8.GetBytes(reason);
+        var buffer = new byte[UdpFrame.HeaderSize + why.Length];
+        int written = UdpFrame.Write(buffer, new FrameHeader(FrameFlags.Bye, 0, 0, 0, 0, 0), why);
+        try { _socket!.SendTo(buffer, 0, written, SocketFlags.None, endpoint); }
+        catch (SocketException) { /* best effort */ }
+        catch (ObjectDisposedException) { /* shutting down */ }
     }
 }
 
@@ -158,11 +213,14 @@ public sealed class UdpConnection : IRelayConnection
     private readonly Action<RelayEvent> _enqueue;
     private volatile bool _closed;
 
-    public UdpConnection(IPEndPoint endpoint, Socket socket, Action<RelayEvent> enqueue, UdpPeerOptions options)
+    public UdpConnection(
+        IPEndPoint endpoint, Socket socket, RegisterRequest credentials,
+        Action<RelayEvent> enqueue, UdpPeerOptions options)
     {
         Endpoint = endpoint;
         _socket = socket;
         _enqueue = enqueue;
+        Credentials = credentials;
         Address = endpoint.ToString();
         Id = $"udp-{endpoint}";
         Peer = new UdpPeer(
@@ -176,6 +234,7 @@ public sealed class UdpConnection : IRelayConnection
     public IPEndPoint Endpoint { get; }
     public UdpPeer Peer { get; }
     public string Id { get; }
+    public RegisterRequest Credentials { get; }
     public string Address { get; }
     public string TransportName => "Udp";
     public bool IsClosed => _closed;
@@ -184,6 +243,12 @@ public sealed class UdpConnection : IRelayConnection
     {
         if (_closed) return;
         Peer.Send(Encoding.UTF8.GetBytes(json), mode);
+    }
+
+    public void SendBinary(byte[] frame, DeliveryMode mode)
+    {
+        if (_closed) return;
+        Peer.Send(frame, mode, gameData: true);
     }
 
     public void Close(string reason)
@@ -208,11 +273,12 @@ public sealed class UdpConnection : IRelayConnection
         }
     }
 
-    private void Deliver(byte[] payload, DeliveryMode mode)
+    private void Deliver(byte[] payload, DeliveryMode mode, bool isGameData)
     {
         if (_closed) return;
-        _enqueue(new RelayEvent(
-            RelayEventKind.Message, this, Encoding.UTF8.GetString(payload), "", mode));
+        _enqueue(isGameData
+            ? new RelayEvent(RelayEventKind.Message, this, null, payload, "", mode)
+            : new RelayEvent(RelayEventKind.Message, this, Encoding.UTF8.GetString(payload), null, "", mode));
     }
 
     private void OnPeerClosed(string reason)
@@ -220,6 +286,6 @@ public sealed class UdpConnection : IRelayConnection
         if (_closed) return;
         _closed = true;
         _enqueue(new RelayEvent(
-            RelayEventKind.Disconnected, this, null, reason, DeliveryMode.Reliable));
+            RelayEventKind.Disconnected, this, null, null, reason, DeliveryMode.Reliable));
     }
 }

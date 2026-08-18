@@ -1,11 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Must match EasyMulti.Protocol: netstandard2.1 + C# 9 is what Unity 2021.3 LTS
+         and newer can compile from source, and every .NET 6+ host (Godot 4.x, MonoGame,
+         Stride, plain .NET) can consume. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <!-- Implicit usings emit `global using`, which is C# 10. Every file declares its own. -->
+    <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>EasyMulti.Client</RootNamespace>
-    <!-- Zero third-party dependencies; only the BCL, so it drops into any .NET 8 host (incl. Godot C#). -->
+    <RootNamespace>EasyMultiNet</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,0 +1,39 @@
+# EasyMulti 中继的生产形态：中继 + Caddy（终结 TLS，自动签证书）。
+#
+#   1. cp .env.example .env && 填一个真 token（openssl rand -hex 32）
+#   2. 把 Caddyfile 里的域名换成你的，并把域名 A 记录指到这台机器的公网 IP
+#   3. docker compose up -d
+#
+# 端口分工（两条腿不一样，见 docs/DEPLOY.md）：
+#   · WebSocket 只挂在内网，公网入口是 Caddy 的 443（wss://）。
+#     所以这里**不要**把 7777/tcp 发布到宿主机 —— 发布了就等于开了一条绕过 TLS 的明文口子。
+#   · UDP 走不了 HTTP 反代，必须直接发布到宿主机，明文。
+
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      # 缺了就拒绝启动，别让它带着空 token 跑起来
+      EASYMULTI_TOKEN: ${EASYMULTI_TOKEN:?请先在 .env 里设 EASYMULTI_TOKEN}
+    expose:
+      - "7777"              # 只对 compose 内网可见，给 caddy 反代用
+    ports:
+      - "7777:7777/udp"     # UDP 直连，公网可达
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - "80:80"             # Let's Encrypt 的 HTTP 校验要用，别只开 443
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data    # 证书落在这里。少了它每次重启都重新签，会撞签发频率限制
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

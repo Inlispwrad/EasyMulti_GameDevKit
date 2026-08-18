@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MemoryPack" Version="1.21.4" />
     <ProjectReference Include="../../src/EasyMulti.Client/EasyMulti.Client.csproj" />
   </ItemGroup>
 

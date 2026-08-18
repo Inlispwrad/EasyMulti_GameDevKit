@@ -2,7 +2,7 @@
 
 using System.Text.Json;
 
-namespace EasyMulti.Relay;
+namespace EasyMultiNet.Relay;
 
 public sealed class RelayConfig
 {

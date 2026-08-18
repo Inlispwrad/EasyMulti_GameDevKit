@@ -4,31 +4,38 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
-using EasyMulti.Protocol;
-using EasyMulti.Relay;
+using EasyMultiNet.Protocol;
+using EasyMultiNet.Relay;
 
-namespace EasyMulti.Relay.Transport;
+namespace EasyMultiNet.Relay.Transport;
 
 /// <summary>
 /// WebSocket transport built on BCL <see cref="HttpListener"/> + <see cref="AcceptWebSocketAsync"/>.
 /// Zero third-party dependencies. TLS is intentionally out of scope — put a reverse proxy
 /// (nginx/caddy) in front for <c>wss://</c>.
+/// <para>
+/// 凭证在**升级握手里**验（<c>Sec-WebSocket-Protocol</c>，见 <see cref="RelayHandshake"/>）：
+/// 验不过就回 401、根本不升级，不会有任何对象被创建。反向代理必须透传这个头
+/// —— caddy 的 reverse_proxy 默认透传，nginx 配 WebSocket 升级时一并带上。
+/// </para>
 /// </summary>
 public sealed class WebSocketTransport : IRelayTransport
 {
     private readonly int _port;
     private HttpListener? _listener;
     private Action<RelayEvent>? _enqueue;
+    private Func<RegisterRequest, string, string?>? _authenticate;
     private readonly object _gate = new();
     private bool _stopped;
 
     public WebSocketTransport(int port) => _port = port;
 
-    public void Start(Action<RelayEvent> enqueue)
+    public void Start(Action<RelayEvent> enqueue, Func<RegisterRequest, string, string?> authenticate)
     {
         _enqueue = enqueue;
+        _authenticate = authenticate;
         _listener = StartListener(_port);
-        _ = AcceptLoop(_listener, enqueue);
+        _ = AcceptLoop(_listener, enqueue, authenticate);
     }
 
     public void Tick()
@@ -55,20 +62,34 @@ public sealed class WebSocketTransport : IRelayTransport
 
     private static HttpListener StartListener(int port)
     {
-        // '+' binds all interfaces; on Windows it needs an admin urlacl. Fall back to
-        // localhost for out-of-the-box single-machine runs (the same strategy as PokerRush's DevRelay).
-        foreach (string prefix in new[] { $"http://+:{port}/", $"http://localhost:{port}/" })
+        // '+' binds all interfaces; on Windows it needs an admin urlacl. Fall back to the
+        // loopback prefixes, which a non-admin user may always bind (the same strategy as
+        // PokerRush's DevRelay). Both spellings are registered because HttpListener matches
+        // on the request's Host header: a client dialling 127.0.0.1 does *not* match a
+        // "localhost" prefix, which used to make loopback clients fail on Windows.
+        string[][] attempts =
+        {
+            new[] { $"http://+:{port}/" },
+            new[] { $"http://localhost:{port}/", $"http://127.0.0.1:{port}/" },
+        };
+
+        foreach (string[] prefixes in attempts)
         {
             var listener = new HttpListener();
-            listener.Prefixes.Add(prefix);
+            foreach (string prefix in prefixes)
+            {
+                listener.Prefixes.Add(prefix);
+            }
+
             try
             {
                 listener.Start();
-                Console.WriteLine($"[EasyMulti] WebSocket listening on {prefix.Replace("http://", "ws://")}");
-                if (prefix.Contains("localhost"))
+                string listening = string.Join(" ", prefixes.Select(p => p.Replace("http://", "ws://")));
+                Console.WriteLine($"[EasyMulti] WebSocket listening on {listening}");
+                if (prefixes.Length > 1)
                 {
                     Console.WriteLine(
-                        "[EasyMulti] 只绑到了 localhost。要收本机以外的连接，用管理员跑一次："
+                        "[EasyMulti] 只绑到了本机回环。要收本机以外的连接，用管理员跑一次："
                         + $"netsh http add urlacl url=http://+:{port}/ user=%USERNAME%");
                 }
 
@@ -76,7 +97,8 @@ public sealed class WebSocketTransport : IRelayTransport
             }
             catch (HttpListenerException e)
             {
-                Console.Error.WriteLine($"[EasyMulti] 绑定 {prefix} 失败（{e.Message}），换下一个");
+                Console.Error.WriteLine(
+                    $"[EasyMulti] 绑定 {string.Join(" ", prefixes)} 失败（{e.Message}），换下一组");
                 listener.Close();
             }
         }
@@ -84,7 +106,8 @@ public sealed class WebSocketTransport : IRelayTransport
         throw new InvalidOperationException($"端口 {port} 一个前缀都绑不上");
     }
 
-    private static async Task AcceptLoop(HttpListener listener, Action<RelayEvent> enqueue)
+    private static async Task AcceptLoop(
+        HttpListener listener, Action<RelayEvent> enqueue, Func<RegisterRequest, string, string?> authenticate)
     {
         while (true)
         {
@@ -98,24 +121,60 @@ public sealed class WebSocketTransport : IRelayTransport
                 return; // listener stopped
             }
 
-            _ = HandleContext(context, enqueue);
+            _ = HandleContext(context, enqueue, authenticate);
         }
     }
 
-    private static async Task HandleContext(HttpListenerContext context, Action<RelayEvent> enqueue)
+    private static async Task HandleContext(
+        HttpListenerContext context, Action<RelayEvent> enqueue, Func<RegisterRequest, string, string?> authenticate)
     {
         if (!context.Request.IsWebSocketRequest)
         {
-            // Not a WebSocket upgrade (e.g. a reverse-proxy health check). Answer 426 and move on.
-            context.Response.StatusCode = (int)HttpStatusCode.UpgradeRequired;
+            // Health probes arrive as a plain GET. Load balancers and PaaS platforms mark a
+            // service unhealthy on anything but 2xx, so answer /health with 200 — otherwise
+            // "deploy it once and forget it" turns into a restart loop. Everything else
+            // that is not an upgrade gets 426.
+            bool health = string.Equals(context.Request.Url?.AbsolutePath, "/health", StringComparison.Ordinal);
+            context.Response.StatusCode = health
+                ? (int)HttpStatusCode.OK
+                : (int)HttpStatusCode.UpgradeRequired;
+
+            if (health)
+            {
+                byte[] body = Encoding.UTF8.GetBytes("ok");
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                context.Response.ContentLength64 = body.Length;
+                try { context.Response.OutputStream.Write(body, 0, body.Length); }
+                catch (Exception) { /* probe hung up */ }
+            }
+
             context.Response.Close();
+            return;
+        }
+
+        // 凭证在升级之前验完。不合格的请求拿不到 WebSocket，也就没有任何对象被创建 ——
+        // 这是「没证明身份就不占资源」的落点。浏览器读不到 401 的状态码（WebSocket 规范
+        // 有意不给 JS），但走到这里的只有 token/gameId 配错的开发者，中继日志里有原因；
+        // 玩家会碰到的 name_taken 不在这拦，那是核心线程上的事。
+        string address = context.Request.RemoteEndPoint?.ToString() ?? "unknown";
+        if (!RelayHandshake.TryDecode(SubProtocols(context.Request), out RegisterRequest credentials))
+        {
+            Console.Error.WriteLine($"[EasyMulti] 拒绝升级 {address}：没有可解析的凭证子协议");
+            Refuse(context, HttpStatusCode.Unauthorized);
+            return;
+        }
+
+        if (authenticate(credentials, address) is string refusal)
+        {
+            Console.Error.WriteLine($"[EasyMulti] 拒绝升级 {address}：{refusal}");
+            Refuse(context, HttpStatusCode.Unauthorized);
             return;
         }
 
         HttpListenerWebSocketContext socketContext;
         try
         {
-            socketContext = await context.AcceptWebSocketAsync(subProtocol: null).ConfigureAwait(false);
+            socketContext = await context.AcceptWebSocketAsync(RelayHandshake.Protocol).ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -124,9 +183,23 @@ public sealed class WebSocketTransport : IRelayTransport
             return;
         }
 
-        string address = context.Request.RemoteEndPoint?.ToString() ?? "unknown";
-        var connection = new WebSocketConnection(socketContext.WebSocket, address, enqueue);
+        var connection = new WebSocketConnection(socketContext.WebSocket, address, credentials, enqueue);
         await connection.RunAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>客户端提出的子协议名列表（<c>Sec-WebSocket-Protocol</c> 是逗号分隔的）。</summary>
+    private static IEnumerable<string> SubProtocols(HttpListenerRequest request)
+    {
+        string? raw = request.Headers["Sec-WebSocket-Protocol"];
+        return string.IsNullOrEmpty(raw)
+            ? Array.Empty<string>()
+            : raw!.Split(',');
+    }
+
+    private static void Refuse(HttpListenerContext context, HttpStatusCode status)
+    {
+        context.Response.StatusCode = (int)status;
+        try { context.Response.Close(); } catch (Exception) { /* peer hung up */ }
     }
 }
 
@@ -143,27 +216,32 @@ public sealed class WebSocketConnection : IRelayConnection
 
     private readonly WebSocket _socket;
     private readonly Action<RelayEvent> _enqueue;
-    private readonly Channel<string> _outbox =
-        Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<(string? Text, byte[]? Binary)> _outbox =
+        Channel.CreateUnbounded<(string? Text, byte[]? Binary)>(new UnboundedChannelOptions { SingleReader = true });
 
     private readonly System.Diagnostics.Stopwatch _uptime = System.Diagnostics.Stopwatch.StartNew();
     private string? _closeReason;
 
-    public WebSocketConnection(WebSocket socket, string address, Action<RelayEvent> enqueue)
+    public WebSocketConnection(
+        WebSocket socket, string address, RegisterRequest credentials, Action<RelayEvent> enqueue)
     {
         _socket = socket;
         _enqueue = enqueue;
         Address = address;
+        Credentials = credentials;
         Id = $"ws-{Interlocked.Increment(ref _nextId)}";
     }
 
     public string Id { get; }
+    public RegisterRequest Credentials { get; }
     public string Address { get; }
     public string TransportName => "WebSocket";
 
     public double UptimeSeconds => _uptime.Elapsed.TotalSeconds;
 
-    public void Send(string json, DeliveryMode mode) => _outbox.Writer.TryWrite(json);
+    public void Send(string json, DeliveryMode mode) => _outbox.Writer.TryWrite((json, null));
+
+    public void SendBinary(byte[] frame, DeliveryMode mode) => _outbox.Writer.TryWrite((null, frame));
 
     public void Close(string reason)
     {
@@ -173,14 +251,14 @@ public sealed class WebSocketConnection : IRelayConnection
 
     public async Task RunAsync()
     {
-        _enqueue(new RelayEvent(RelayEventKind.Connected, this, null, "", DeliveryMode.Reliable));
+        _enqueue(new RelayEvent(RelayEventKind.Connected, this, null, null, "", DeliveryMode.Reliable));
         Task send = PumpOutboxAsync();
         Task receive = PumpInboxAsync();
         await Task.WhenAny(send, receive).ConfigureAwait(false);
         _outbox.Writer.TryComplete();
         _socket.Dispose();
         _enqueue(new RelayEvent(
-            RelayEventKind.Disconnected, this, null,
+            RelayEventKind.Disconnected, this, null, null,
             _closeReason ?? "连接已关闭", DeliveryMode.Reliable));
     }
 
@@ -190,13 +268,13 @@ public sealed class WebSocketConnection : IRelayConnection
         {
             while (await _outbox.Reader.WaitToReadAsync().ConfigureAwait(false))
             {
-                while (_outbox.Reader.TryRead(out string? message))
+                while (_outbox.Reader.TryRead(out (string? Text, byte[]? Binary) message))
                 {
-                    await _socket.SendAsync(
-                            new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)),
-                            WebSocketMessageType.Text,
-                            endOfMessage: true,
-                            CancellationToken.None)
+                    byte[] bytes = message.Binary ?? Encoding.UTF8.GetBytes(message.Text!);
+                    WebSocketMessageType kind = message.Binary != null
+                        ? WebSocketMessageType.Binary
+                        : WebSocketMessageType.Text;
+                    await _socket.SendAsync(new ArraySegment<byte>(bytes), kind, endOfMessage: true, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
             }
@@ -230,10 +308,19 @@ public sealed class WebSocketConnection : IRelayConnection
                 }
                 while (!result.EndOfMessage);
 
-                string json = Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
+                if (result.MessageType == WebSocketMessageType.Binary)
+                {
+                    _enqueue(new RelayEvent(
+                        RelayEventKind.Message, this, null, message.ToArray(), "", DeliveryMode.Reliable));
+                }
+                else
+                {
+                    string json = Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length);
+                    _enqueue(new RelayEvent(
+                        RelayEventKind.Message, this, json, null, "", DeliveryMode.Reliable));
+                }
+
                 message.SetLength(0);
-                _enqueue(new RelayEvent(
-                    RelayEventKind.Message, this, json, "", DeliveryMode.Reliable));
             }
         }
         catch (Exception e)

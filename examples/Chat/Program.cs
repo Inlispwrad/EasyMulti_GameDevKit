@@ -1,9 +1,10 @@
 #nullable enable
 
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
-using EasyMulti.Client;
-using EasyMulti.Protocol;
+using EasyMultiNet;
+using EasyMultiNet.Protocol;
 
 // ── EasyMulti Chat / 延迟测试 ────────────────────────────────────────────────
 // 终端版聊天室。默认走 UDP；用 --transport ws 可切 WebSocket。
@@ -26,10 +27,10 @@ internal static class Program
     {
         var opts = Options.Parse(args);
 
-        var config = new EasyMultiConfig(opts.Token, opts.Game, opts.Name);
+        var config = new SessionConfig(opts.Token, opts.Game, opts.Name);
         var client = opts.Transport == "udp"
-            ? EasyMultiClient.CreateUdp(config)
-            : EasyMultiClient.CreateWebSocket(config);
+            ? RelaySession.CreateUdp(config)
+            : RelaySession.CreateWebSocket(config);
 
         var latency = new Dictionary<string, long>();          // peer -> 最近一次 RTT(ms)
         var benchRtts = new List<long>();                      // 基准模式收集的样本
@@ -37,8 +38,10 @@ internal static class Program
         int benchPongs = 0;
         int pingId = 0;
 
-        client.Failed += reason => Log("失败：" + reason);
-        client.Registered += () => Log($"{opts.Name} 已注册");
+        client.Rejected += reason => Log("被拒：" + reason);
+        client.Disconnected += reason => Log("断线：" + reason);
+        // 房间列表是「问才有」的，服务器不会主动送，所以这里自己问一次。
+        client.Registered += () => { Log($"{opts.Name} 已注册"); client.RefreshRooms(); };
         client.RoomListChanged += rooms => Log($"大厅：{rooms.Count} 个房间");
         client.RoomPlayersChanged += players => Log("成员：" + string.Join(", ", players));
 
@@ -57,8 +60,9 @@ internal static class Program
             client.Registered += () => client.JoinRoom(opts.Room);
         }
 
-        client.GameDataReceived += (from, data) =>
+        client.GameDataReceived += (from, raw) =>
         {
+            string data = Encoding.UTF8.GetString(raw); // 应用层协议：UTF8(JSON)
             if (!TryReadApp(data, out string? t, out JsonDocument? doc)) return;
 
             switch (t)
@@ -71,7 +75,7 @@ internal static class Program
                 {
                     int id = doc!.RootElement.GetProperty("id").GetInt32();
                     long sent = doc.RootElement.GetProperty("sent").GetInt64();
-                    client.SendGameData(Encode(new { t = "pong", id, sent }), to: from);
+                    client.SendGameData(Bytes(new { t = "pong", id, sent }), to: from);
                     break;
                 }
 
@@ -121,13 +125,13 @@ internal static class Program
             while (stdinQueue.TryDequeue(out string? line))
             {
                 if (line == "/quit") return 0;
-                client.SendGameData(Encode(new { t = "chat", name = opts.Name, text = line, at = NowMs() }));
+                client.SendGameData(Bytes(new { t = "chat", name = opts.Name, text = line, at = NowMs() }));
             }
 
             long now = NowMs();
-            if (client.State == EasyMultiState.InRoom && now >= nextPing)
+            if (client.State == SessionState.InRoom && now >= nextPing)
             {
-                client.SendGameData(Encode(new { t = "ping", id = ++pingId, sent = now }));
+                client.SendGameData(Bytes(new { t = "ping", id = ++pingId, sent = now }));
                 nextPing = now + opts.PingInterval;
             }
 
@@ -168,6 +172,8 @@ internal static class Program
     private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     private static string Encode(object o) => JsonSerializer.Serialize(o, AppJson);
+
+    private static byte[] Bytes(object o) => Encoding.UTF8.GetBytes(Encode(o));
 
     private static bool TryReadApp(string data, out string? t, out JsonDocument? doc)
     {
