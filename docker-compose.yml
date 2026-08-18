@@ -11,7 +11,9 @@
 
 services:
   relay:
-    build: .
+    # 镜像由 GitHub Actions 构建好推上来，这台机器不编译。
+    # EASYMULTI_TAG 在 .env 里改：latest 跟 main，dev 跟 dev 分支，也可以填某个 commit 短哈希回滚。
+    image: ghcr.io/inlispwrad/easymulti-relay:${EASYMULTI_TAG:-latest}
     restart: unless-stopped
     environment:
       # 缺了就拒绝启动，别让它带着空 token 跑起来

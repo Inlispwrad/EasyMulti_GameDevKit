@@ -1,12 +1,28 @@
-**/.git
-**/.gitignore
-**/.vs
-**/.vscode
-**/.idea
-**/bin
-**/obj
-**/TestResults
-**/*.user
-**/*.md
+# 构建上下文越小越快。Dockerfile 里是 COPY . .，不挡的话 .git 和本地
+# bin/obj 会一起进去 —— 陈旧的 obj/project.assets.json 甚至能让容器里的
+# 还原直接失败（本机路径对不上）。
+
+.git
+.gitignore
+.github
+.env
+.env.example
+
+# 本地编译产物
+**/bin/
+**/obj/
+**/.godot/
+TestResults/
+*.trx
+
+# 构建中继用不到的东西（publish 只读 src/EasyMulti.Relay 及其引用）
+tests/
+examples/
+samples/
+docs/
+reports/
+scripts/
+*.md
 LICENSE
-easyrelay.config.json
+docker-compose.yml
+Caddyfile

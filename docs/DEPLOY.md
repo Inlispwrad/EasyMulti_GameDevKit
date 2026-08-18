@@ -32,20 +32,53 @@
 
 长期运行建议 `dotnet publish -c Release` 后跑 `./easymulti-relay`，或用 systemd 托管。
 
-## Docker（单机快跑，明文）
+## Docker（本地 / 内网快跑，明文）
 
     docker build -t easymulti .
     docker run -d --restart unless-stopped -p 7777:7777/tcp -p 7777:7777/udp -e EASYMULTI_TOKEN=$(openssl rand -hex 32) easymulti
 
 这样跑起来的是明文 `ws://` + UDP，够开发和内网用。**要给浏览器 / WASM 用就得上 wss**，见下一节。
 
-## Docker Compose（生产形态：wss + UDP）
+## 生产部署：CI 构建，服务器只拉
 
-仓库根目录有现成的 `docker-compose.yml` + `Caddyfile`：中继 + Caddy，Caddy 自动申请续期证书。
+**生产机上不编译。** 推代码 → GitHub Actions 跑测试、构建镜像、推到 `ghcr.io` → 服务器
+`docker pull`。三个理由：编译最吃 CPU 和内存，不该和线上服务抢；镜像由哪个 commit 出的有据
+可查，服务器上现场构建的东西过两个月没人说得清跑的是什么；服务器上只要 Docker，不用装
+.NET SDK、不用留源码。
 
-    cp .env.example .env          # 填 token：openssl rand -hex 32
-    vim Caddyfile                 # 换成你的域名（A 记录要先指到这台机器的公网 IP）
+顺带是空间账 —— 服务器现场构建要拉 SDK 镜像（≈1GB）加编译中间产物，好几个 G；
+只拉最终镜像的话，中继 ≈110MB（alpine）+ Caddy ≈50MB，两百来兆就够。
+
+流水线在 `.github/workflows/image.yml`，认证不用配任何 secret（`GITHUB_TOKEN` 是 Actions
+自带的）。镜像 tag：`main` 分支出 `latest`，`dev` 分支出 `dev`，每次构建另外带一个 commit
+短哈希的 tag —— 要回滚就指那个。
+
+### 第一次
+
+**先把镜像设为公开**，否则服务器拉不动：GitHub 仓库页 → 右侧 Packages → `easymulti-relay`
+→ Package settings → Change visibility → Public。新推上去的包默认是私有的。
+
+（不想公开也行，那就在服务器上 `docker login ghcr.io`，用一个只带 `read:packages` 权限的
+personal access token。中继镜像里没有任何机密，公开更省事。）
+
+然后在服务器上：
+
+    mkdir easymulti && cd easymulti
+    # 只要这三个文件，不用 clone 整个仓库
+    curl -O https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/docker-compose.yml
+    curl -O https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/Caddyfile
+    curl -o .env https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/.env.example
+
+    vi .env         # 填 token（openssl rand -hex 32）；在 dev 上迭代就把 EASYMULTI_TAG 改成 dev
+    vi Caddyfile    # 换成你的域名（A 记录要先指到这台机器的公网 IP）
+
     docker compose up -d
+
+### 以后每次更新
+
+    docker compose pull && docker compose up -d
+
+就这两条。`pull` 只下载变化的层，通常几 MB。
 
 端口分工是这套编排里最要紧的一件事，两条腿走的路不一样：
 

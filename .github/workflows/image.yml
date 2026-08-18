@@ -1,0 +1,65 @@
+# 推代码 → 跑测试 → 构建镜像 → 推到 ghcr.io。服务器那边只负责 docker pull。
+#
+# 生产机上不编译：编译最吃 CPU 和内存，不该和线上服务抢；而且镜像由哪个 commit 出的
+# 有据可查，服务器上现场构建的东西过两个月没人说得清跑的是什么。
+#
+# 认证不用配任何 secret —— GITHUB_TOKEN 是 Actions 自带的，packages: write 就够了。
+
+name: image
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      # 测试挂了就不会走到下面的构建 —— 出不了镜像，也就部署不上去。
+      - run: dotnet test -c Release --nologo
+
+  image:
+    name: 构建并推送镜像
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub 用户名允许大写，但镜像名必须全小写，不转会被 registry 拒掉。
+      - id: name
+        run: echo "image=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/easymulti-relay" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.image }}
+          # 分支名一个 tag（dev / main），commit 短哈希一个（要回滚就指它），
+          # latest 只跟默认分支走，免得 dev 上的东西被当成正式版拉下去。
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

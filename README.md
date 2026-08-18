@@ -52,14 +52,16 @@ docker build -t easymulti .
 docker run -d -p 7777:7777/tcp -p 7777:7777/udp -e EASYMULTI_TOKEN=your-secret easymulti
 ```
 
-要给浏览器 / WASM 用就得上 `wss://`，仓库根目录有现成的 `docker-compose.yml` + `Caddyfile`
-（中继 + Caddy 自动签证书）：
+上面这条是本地 / 内网用的明文形态。**生产走 CI**：推代码 → GitHub Actions 跑测试并把镜像
+推到 `ghcr.io` → 服务器只拉，不编译。服务器上只要 `docker-compose.yml` + `Caddyfile` + `.env`
+三个文件（中继 + Caddy 自动签证书），然后：
 
 ```bash
-cp .env.example .env && vim .env    # 填 token
-vim Caddyfile                       # 换成你的域名
-docker compose up -d
+docker compose up -d              # 首次
+docker compose pull && docker compose up -d   # 以后每次更新
 ```
+
+完整步骤（含镜像可见性、域名、防火墙）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 仓库结构
 
