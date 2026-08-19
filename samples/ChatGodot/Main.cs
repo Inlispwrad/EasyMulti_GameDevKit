@@ -105,7 +105,7 @@ public partial class Main : Control
         _me.Receive<SayMsg>(OnSay);      // ← 玩家的游戏逻辑,全部在这两条类型通道里
         _me.Receive<WhoMsg>(OnWho);
         _me.Rejected     += Status;
-        _me.Disconnected += reason => Status("断线：" + reason);
+        _me.Disconnected += reason => OnConnectionLost("", reason);
 
         _me.RefreshRooms();  // 不用等连上 —— 没连上就先攒着，连上自动补发
         ShowOnly(_lobby);    // 直接进大厅屏；连上没有由下面的自查渲染
@@ -119,6 +119,7 @@ public partial class Main : Control
         if (text.Length == 0) return;
         _me.Send(text); // T=string 一条通道；房主定序后以 SayMsg 广播回来
         _sayInput.Clear();
+        _sayInput.GrabFocus(); // 点「发送」会把焦点带到按钮上，收回来，免得每条都要重新点一下
         // 不在本地抢先显示 —— 等房主定序后广播回来，这样自己看到的顺序和别人完全一致。
     }
 
@@ -152,7 +153,7 @@ public partial class Main : Control
             _me.Join(code);              // ↓ 从这里开始,和加入别人的房完全是同一条路
         };
         _host.Rejected     += reason => Status("房主被拒：" + reason);
-        _host.Disconnected += reason => Status("房主断线：" + reason);
+        _host.Disconnected += reason => OnConnectionLost("房主", reason);
 
         Status("正在开房…");
     }
@@ -178,6 +179,39 @@ public partial class Main : Control
         _roomHeader.Text = _host != null ? $"房间 {code}（这台机器在跑房主）" : $"房间 {code}";
         Status($"已进入房间 {code}");
         _sayInput.GrabFocus();
+    }
+
+    /// <summary>
+    /// 连接没了。光在状态栏写一行是不够的 —— 界面会停在房间屏，看着还连着，
+    /// 但每个按钮都已经无效，而且没有任何路径回到能重连的地方（只能关掉重开）。
+    /// 所以把会话收拾干净、退回连接屏；表单里的值还在，直接再点「连接」就行。
+    /// </summary>
+    private void OnConnectionLost(string who, string reason)
+    {
+        if (_me == null && _host == null) return; // 两条连接会各报一次，收拾一次就够
+
+        Status($"{who}断线：{reason} —— 可以直接重新连接");
+        Teardown();
+        ShowOnly(_login);
+    }
+
+    /// <summary>
+    /// 释放这一轮的所有连接。先把字段清掉再关，免得关闭过程中又触发一次断线回调绕回来。
+    /// <para>
+    /// 用 <c>Disconnect</c> / <c>Close</c> 逐个收，**不要在回调里调
+    /// <c>EasyMulti.Shutdown()</c>** —— 那会清空门面正在遍历的连接表。
+    /// </para>
+    /// </summary>
+    private void Teardown()
+    {
+        EasyMultiHost host = _host;
+        EasyMultiClient me = _me;
+        _host = null;
+        _core = null;
+        _me = null;
+
+        if (host != null) host.Close();
+        if (me != null) me.Disconnect();
     }
 
     private void OnLeft()
@@ -309,6 +343,15 @@ public partial class Main : Control
         var refresh = new Button { Text = "刷新" };
         refresh.Pressed += () => _me.RefreshRooms();
         actions.AddChild(refresh);
+
+        var offline = new Button { Text = "断开" };
+        offline.Pressed += () =>
+        {
+            Teardown();
+            Status("已断开");
+            ShowOnly(_login);
+        };
+        actions.AddChild(offline);
 
         box.AddChild(actions);
         return box;
