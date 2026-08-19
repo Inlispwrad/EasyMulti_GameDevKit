@@ -44,3 +44,6 @@ data_*/
 
 # 本地笔记（可能含密钥，不要提交）
 *.local.md
+
+# Godot 导出预设：装的是本机路径，Android 导出时还会明文存 keystore 密码
+export_presets.cfg
