@@ -51,6 +51,17 @@ namespace EasyMultiNet.Protocol
         /// </para>
         /// </summary>
         Hello = 64,
+
+        /// <summary>
+        /// 保活。空帧，收到的一方立刻回一个 <see cref="AckOnly"/>。
+        /// <para>
+        /// 由**客户端**定时发，中继只负责回应 —— 因为要保住的是客户端那条 NAT 映射，
+        /// 而 NAT 映射只能被出站包刷新，中继发什么都救不回一条已经过期的映射。
+        /// 回应也是必需的：只发不回的话，客户端收不到任何东西，会被自己的 idle
+        /// 计时器误杀。一来一回同时证明了两件事 —— 双方都还活着。
+        /// </para>
+        /// </summary>
+        Ping = 128,
     }
 
     /// <summary>
@@ -136,6 +147,8 @@ namespace EasyMultiNet.Protocol
             if ((flags & FrameFlags.Bye) != 0 && (flags & ~FrameFlags.Bye) != 0) return false;
             // HELLO 必须走可靠通道：它是连接请求，丢了得重传。
             if ((flags & FrameFlags.Hello) != 0 && (flags & FrameFlags.Reliable) == 0) return false;
+            // PING 是独立的空帧，不携带任何其它语义。
+            if ((flags & FrameFlags.Ping) != 0 && (flags & ~FrameFlags.Ping) != 0) return false;
 
             header = new FrameHeader(
                 flags,

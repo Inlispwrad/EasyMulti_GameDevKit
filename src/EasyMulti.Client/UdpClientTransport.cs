@@ -18,6 +18,12 @@ namespace EasyMultiNet
     /// </summary>
     public sealed class UdpClientTransport : IClientTransport
     {
+        /// <summary>
+        /// 保活间隔。远小于 60 秒的 idle 超时，也小于常见 NAT 的映射超时
+        /// （真实设备约 30 秒起；RFC 6263 给 UDP 定的下限是 15 秒）。
+        /// </summary>
+        private const long KeepAliveMs = 15_000;
+
         private enum EventKind { Received, Closed }
 
         private readonly ConcurrentQueue<(EventKind Kind, string Text, byte[]? Binary, DeliveryMode Mode)> _inbox =
@@ -52,7 +58,10 @@ namespace EasyMultiNet
                 (payload, mode, isGameData) => _inbox.Enqueue(isGameData
                     ? (EventKind.Received, "", payload, mode)
                     : (EventKind.Received, Encoding.UTF8.GetString(payload), null, mode)),
-                ReportClosed);
+                ReportClosed,
+                // 客户端负责保活：它在 NAT 后面，而 NAT 映射只能被自己的出站包刷新，
+                // 中继发什么都救不回一条已经过期的映射。中继那侧不设这个值，只回应。
+                new UdpPeerOptions { KeepAliveMs = KeepAliveMs });
 
             _ = Task.Run(ReceiveLoop);
 

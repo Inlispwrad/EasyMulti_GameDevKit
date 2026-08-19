@@ -26,6 +26,16 @@ namespace EasyMultiNet.Protocol
         /// <summary>Maximum un-acked reliable messages before the peer is considered broken.</summary>
         public int MaxPendingMessages { get; set; } = 1024;
 
+        /// <summary>
+        /// 隔多久发一次保活（毫秒）。**0 = 不主动发，只回应** —— 中继侧就该是 0。
+        /// <para>
+        /// 只有客户端需要发：要保住的是它那条 NAT 映射，而映射只能被出站包刷新。
+        /// 取值要明显小于 <see cref="IdleTimeoutMs"/>，也要小于常见 NAT 的映射超时
+        /// （真实设备大约 30 秒起，RFC 6263 给 UDP 定的下限是 15 秒）。
+        /// </para>
+        /// </summary>
+        public long KeepAliveMs { get; set; }
+
         /// <summary>Min interval between standalone ACK frames when nothing else is being sent.</summary>
         public long AckIntervalMs { get; set; } = 10;
 
@@ -62,7 +72,7 @@ namespace EasyMultiNet.Protocol
         private uint _ack;                  // cumulative ack == _recvNext - 1
         private uint _ackBitfield;
         private bool _ackDirty;
-        private long _lastAckSentMs;
+        private long _lastSentMs;
 
         private readonly SortedDictionary<uint, Pending> _pending = new SortedDictionary<uint, Pending>();
         private readonly SortedDictionary<uint, Received> _incoming = new SortedDictionary<uint, Received>();
@@ -205,6 +215,14 @@ namespace EasyMultiNet.Protocol
                     closedByPeer = true;
                     if (payload.Length > 0) byeReason = Encoding.UTF8.GetString(payload.ToArray());
                 }
+                else if ((header.Flags & FrameFlags.Ping) != 0)
+                {
+                    // 保活：立刻回一个 ack 帧。对端靠这个回应确认我们还在
+                    // （_lastActivityMs 已经在上面刷过了，这条连接对我们而言也是活的）。
+                    int pong = EncodeFrame(_scratch, FrameFlags.AckOnly, 0, 0, 0, ReadOnlySpan<byte>.Empty);
+                    SendBytes(_scratch, pong);
+                    return;
+                }
                 else if ((header.Flags & FrameFlags.AckOnly) != 0)
                 {
                     return;
@@ -273,8 +291,16 @@ namespace EasyMultiNet.Protocol
                     }
                 }
 
+                // 保活：这条连接安静太久就主动发一个 PING，把 NAT 映射和对端的 idle
+                // 计时器一起续上。中继侧 KeepAliveMs 是 0，永远走不到这里。
+                if (_opts.KeepAliveMs > 0 && now - _lastSentMs >= _opts.KeepAliveMs)
+                {
+                    int ping = EncodeFrame(_scratch, FrameFlags.Ping, 0, 0, 0, ReadOnlySpan<byte>.Empty);
+                    SendBytes(_scratch, ping);
+                }
+
                 // Flush a standalone ack if we owe one and nothing piggybacked it.
-                if (_ackDirty && now - _lastAckSentMs >= _opts.AckIntervalMs)
+                if (_ackDirty && now - _lastSentMs >= _opts.AckIntervalMs)
                 {
                     int written = EncodeFrame(_scratch, FrameFlags.AckOnly, 0, 0, 0, ReadOnlySpan<byte>.Empty);
                     SendBytes(_scratch, written);
@@ -491,7 +517,7 @@ namespace EasyMultiNet.Protocol
             _send(data, length);
             BytesSent += length;
             MessagesSent++;
-            _lastAckSentMs = NowMs();
+            _lastSentMs = NowMs();
             _ackDirty = false;
         }
 
