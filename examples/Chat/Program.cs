@@ -16,6 +16,7 @@ using EasyMultiNet.Protocol;
 //
 // 用法：
 //   dotnet run --project examples/Chat -- --mode host   --name Host   --transport udp
+//   远程中继加 --relay-host <地址> --token <token>；测试工具的地址和密钥一律从命令行来，不写死。
 //   dotnet run --project examples/Chat -- --mode client --name Alice  --transport ws --room <CODE>
 //   加 --bench 200 表示跑基准：自动 ping/pong，测满 200 个 pong 后打印 RTT 统计并退出。
 
@@ -100,8 +101,8 @@ internal static class Program
             doc?.Dispose();
         };
 
-        Log($"连接中继 127.0.0.1:{opts.Port}（{opts.Transport}）");
-        client.Connect("127.0.0.1", opts.Port);
+        Log($"连接中继 {opts.RelayHost}:{opts.Port}（{opts.Transport}）");
+        client.Connect(opts.RelayHost, opts.Port);
 
         if (opts.BenchCount == 0)
         {
@@ -200,6 +201,7 @@ internal static class Options
     public static Parsed Parse(string[] args)
     {
         string mode = "client", name = "Host", transport = "udp", room = "", token = "demo-token", game = "chat";
+        string relayHost = "127.0.0.1";
         int port = 7777, bench = 0, pingInterval = 1000;
 
         for (int i = 0; i + 1 < args.Length; i += 2)
@@ -214,6 +216,7 @@ internal static class Options
                 case "--token": token = v; break;
                 case "--game": game = v; break;
                 case "--port": port = int.Parse(v); break;
+                case "--relay-host": relayHost = v; break;
                 case "--bench": bench = int.Parse(v); break;
                 case "--ping-interval": pingInterval = int.Parse(v); break;
                 default: throw new ArgumentException($"不认识的参数 {args[i]}");
@@ -224,8 +227,8 @@ internal static class Options
         if (transport is not ("udp" or "ws")) throw new ArgumentException("--transport 必须是 udp 或 ws");
         if (mode == "client" && room.Length == 0) throw new ArgumentException("client 模式需要 --room <房码>");
 
-        return new Parsed(mode, name, transport, room, token, game, port, bench, pingInterval);
+        return new Parsed(mode, name, transport, room, token, game, relayHost, port, bench, pingInterval);
     }
 
-    public sealed record Parsed(string Mode, string Name, string Transport, string Room, string Token, string Game, int Port, int BenchCount, int PingInterval);
+    public sealed record Parsed(string Mode, string Name, string Transport, string Room, string Token, string Game, string RelayHost, int Port, int BenchCount, int PingInterval);
 }

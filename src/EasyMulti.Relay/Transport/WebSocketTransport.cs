@@ -63,8 +63,9 @@ public sealed class WebSocketTransport : IRelayTransport
     private static HttpListener StartListener(int port)
     {
         // '+' binds all interfaces; on Windows it needs an admin urlacl. Fall back to the
-        // loopback prefixes, which a non-admin user may always bind (the same strategy as
-        // PokerRush's DevRelay). Both spellings are registered because HttpListener matches
+        // loopback prefixes, which a non-admin user may always bind. On Linux (where the
+        // relay actually runs) '+' binds without any of this. Both spellings are registered
+        // because HttpListener matches
         // on the request's Host header: a client dialling 127.0.0.1 does *not* match a
         // "localhost" prefix, which used to make loopback clients fail on Windows.
         string[][] attempts =

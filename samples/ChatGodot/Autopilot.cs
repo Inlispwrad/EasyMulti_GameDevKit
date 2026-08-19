@@ -14,8 +14,10 @@ using Godot;
 /// <item>谁发的言都经房主定序再广播回来（<b>包括发言者自己</b>），两端序号一致。</item>
 /// </list>
 ///
-///     godot --headless --path samples/ChatGodot res://Autopilot.tscn -- --role=host
-///     godot --headless --path samples/ChatGodot res://Autopilot.tscn -- --role=guest --code=ABC123
+///     godot --headless --path samples/ChatGodot res://Autopilot.tscn -- --role=host --token=xxx
+///     godot --headless --path samples/ChatGodot res://Autopilot.tscn -- --role=guest --code=ABC123 --token=xxx
+///
+/// <para>地址和 token 从命令行来（默认 127.0.0.1:7777），和界面那边一样不写死。</para>
 /// </summary>
 public partial class Autopilot : Node
 {
@@ -26,6 +28,9 @@ public partial class Autopilot : Node
 
     private string _role = "host";
     private string _code = "";
+    private string _relayHost = "127.0.0.1";
+    private int _relayPort = 7777;
+    private string _token = "demo-token";
     private double _timeout = 40.0;
     private double _quitIn = -1.0;
     private int _exitCode = 1;
@@ -41,9 +46,13 @@ public partial class Autopilot : Node
         {
             if (arg.StartsWith("--role=")) _role = arg.Substring("--role=".Length);
             else if (arg.StartsWith("--code=")) _code = arg.Substring("--code=".Length);
+            else if (arg.StartsWith("--relay-host=")) _relayHost = arg.Substring("--relay-host=".Length);
+            else if (arg.StartsWith("--relay-port=")) _relayPort = arg.Substring("--relay-port=".Length).ToInt();
+            else if (arg.StartsWith("--token=")) _token = arg.Substring("--token=".Length);
         }
 
         GD.Print($"AUTOPILOT role={_role}");
+        Net.Configure(_relayHost, _relayPort, _token); // 界面那边由表单调，这里由命令行调
         if (_role == "host") StartHost();
         else JoinAsPlayer(GuestName, _code);
     }

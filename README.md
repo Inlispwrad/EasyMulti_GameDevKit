@@ -4,13 +4,6 @@
 
 > **EasyMulti 只做数据转交。** 玩家自己起 Host（可以是某个客户端开房，也可以是独立服务器进程）。中继不解析游戏内容，也不跑任何游戏规则。
 
-## 来源
-
-EasyMulti 是从 PokerRush 的 **DevRelay**（一个开发期 WebSocket 中继）演化来的，保留了它的核心设计——单线程事件循环、零第三方依赖、GAME_DATA 信封、`players[0]` 即房主、可靠/不可靠通道；并做了几处扩展与简化：
-
-- **新增**：gameId 路由、token 鉴权、UDP 传输（DevRelay 已切到 WebSocket-only）、掉线重连（名单准入）、KICK、自动转交房主、无人即销毁。
-- **去掉**：DevRelay 里 PokerRush 特有的 `SET_READY` / `ROOM_READY` 与「满员且全员准备才能开局」的开局条件——那套耦合 EasyMulti 不继承，准备状态和开局条件属于游戏层。
-
 ## 特性
 
 - **双传输**：一条中继同时接受 **WebSocket**（浏览器网页 / WASM 导出）与 **UDP**（Steam / NS / 桌面）。两者**天然互通**——一个 WebSocket 客户端可以加入一个 UDP Host 开的房间。客户端一个配置项切换：`Transport = EasyMultiTransport.Udp / Ws / Wss`，HTTPS 页面用 `Wss`（TLS 由反代终结，见 [DEPLOY.md](docs/DEPLOY.md)）。
@@ -78,7 +71,8 @@ samples/
   ChatGodot/            Godot 4.7.1 聊天室 —— 全项目只有 Net.cs 一个文件碰中继
 examples/
   Echo/                 最小 hostCore + client 示例
-  Chat/                 聊天室 + 实时延迟（终端 UDP + 浏览器 WS，含基准工具）
+  ChatCli/              终端聊天室：门面 + 类型通道的最小完整示例，也是部署后的验证工具
+  Chat/                 延迟基准（低层 RelaySession，终端 UDP + 浏览器 WS）
 tests/
   EasyMulti.Tests/      集成测试 + JSON 编解码测试（互通、鉴权、隔离、分片、转义、恶意输入）
 ```

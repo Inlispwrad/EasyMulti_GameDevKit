@@ -41,6 +41,9 @@ public partial class Main : Control
     private Control _login;
     private Control _lobby;
     private Control _chat;
+    private LineEdit _hostInput;
+    private LineEdit _portInput;
+    private LineEdit _tokenInput;
     private LineEdit _nameInput;
     private LineEdit _roomNameInput;
     private LineEdit _sayInput;
@@ -79,8 +82,21 @@ public partial class Main : Control
 
     private void DoGoOnline()
     {
+        string host = _hostInput.Text.Trim();
+        string token = _tokenInput.Text.Trim();
         string name = _nameInput.Text.Trim();
+        if (host.Length == 0) { Status("填一下中继地址"); return; }
+        if (token.Length == 0) { Status("填一下 token —— 中继没有默认密码"); return; }
         if (name.Length == 0) { Status("先起个名字"); return; }
+        if (!int.TryParse(_portInput.Text.Trim(), out int port) || port <= 0 || port > 65535)
+        {
+            Status("端口要是 1–65535 之间的数字");
+            return;
+        }
+
+        // 配置在这一刻才写入：测试工具的凭证由使用者输入，不躺在代码里。
+        Net.Configure(host, port, token);
+        Net.Remember(host, port, token, name);
 
         _me = EasyMulti.Client.Connect(name);
         _me.RoomsChanged += RenderLobby;
@@ -221,15 +237,50 @@ public partial class Main : Control
 
     private Control BuildLogin()
     {
-        var box = new HBoxContainer();
-        _nameInput = new LineEdit { PlaceholderText = "你的名字", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _nameInput.TextSubmitted += _ => DoGoOnline();
-        box.AddChild(_nameInput);
+        var box = new VBoxContainer();
+        box.AddThemeConstantOverride("separation", 8);
 
-        var go = new Button { Text = "进入" };
+        var hint = new Label
+        {
+            Text = "填你自己那台中继的地址和 token。这是测试工具，凭证由你输入，不写死在代码里。",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        hint.AddThemeColorOverride("font_color", new Color(0.6f, 0.7f, 0.8f));
+        box.AddChild(hint);
+
+        (string host, int port, string token, string name) = Net.Recall(); // 上次填过就带回来
+
+        var form = new GridContainer { Columns = 2 };
+        form.AddThemeConstantOverride("h_separation", 10);
+        form.AddThemeConstantOverride("v_separation", 6);
+
+        _hostInput = AddField(form, "中继地址", host, "域名或 IP，不带 ws:// 前缀");
+        _portInput = AddField(form, "端口", port.ToString(), "7777");
+        _tokenInput = AddField(form, "token", token, "和服务器上那个一模一样");
+        _nameInput = AddField(form, "你的名字", name, "在这个房间里的身份");
+        _nameInput.TextSubmitted += _ => DoGoOnline();
+        box.AddChild(form);
+
+        var go = new Button { Text = "连接" };
+        go.CustomMinimumSize = new Vector2(120, 0);
+        go.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
         go.Pressed += DoGoOnline;
         box.AddChild(go);
         return box;
+    }
+
+    /// <summary>表单的一行：左边标签，右边输入框。</summary>
+    private static LineEdit AddField(GridContainer form, string label, string value, string placeholder)
+    {
+        form.AddChild(new Label { Text = label });
+        var input = new LineEdit
+        {
+            Text = value,
+            PlaceholderText = placeholder,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
+        form.AddChild(input);
+        return input;
     }
 
     private Control BuildLobby()
@@ -266,10 +317,20 @@ public partial class Main : Control
     private Control BuildChat()
     {
         var box = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
-        _roomHeader = new Label { Text = "房间" };
-        box.AddChild(_roomHeader);
+
+        // 标题栏：房间名在左，「离开房间」在右。它以前是贴在输入框正下方的通栏按钮 ——
+        // 那个位置和体量在任何聊天界面里都是「发送」的位置，很容易误按。
+        var head = new HBoxContainer();
+        _roomHeader = new Label { Text = "房间", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        head.AddChild(_roomHeader);
+
+        var leave = new Button { Text = "离开房间" };
+        leave.Pressed += DoLeave;
+        head.AddChild(leave);
+        box.AddChild(head);
 
         var middle = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        middle.AddThemeConstantOverride("separation", 10);
         _log = new RichTextLabel
         {
             BbcodeEnabled = true,
@@ -278,8 +339,11 @@ public partial class Main : Control
         };
         middle.AddChild(_log);
 
-        _playerList = new ItemList { CustomMinimumSize = new Vector2(180, 0) };
-        middle.AddChild(_playerList);
+        var side = new VBoxContainer { CustomMinimumSize = new Vector2(180, 0) };
+        side.AddChild(new Label { Text = "在场玩家" });
+        _playerList = new ItemList { SizeFlagsVertical = SizeFlags.ExpandFill };
+        side.AddChild(_playerList);
+        middle.AddChild(side);
         box.AddChild(middle);
 
         var row = new HBoxContainer();
@@ -288,13 +352,10 @@ public partial class Main : Control
         row.AddChild(_sayInput);
 
         var send = new Button { Text = "发送" };
+        send.CustomMinimumSize = new Vector2(96, 0); // 底部这一行只有一个动作，就是发送
         send.Pressed += DoSay;
         row.AddChild(send);
         box.AddChild(row);
-
-        var leave = new Button { Text = "离开房间" };
-        leave.Pressed += DoLeave;
-        box.AddChild(leave);
         return box;
     }
 

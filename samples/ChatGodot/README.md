@@ -118,17 +118,18 @@ godot --path samples/ChatGodot
 
 ### 3. 换成你自己的服务器
 
-改 [Net.cs](Net.cs) 里那份配置，别的地方一个字都不用动：
+**不用改代码。** 启动后第一屏就是连接表单，填中继地址、端口、token 和你的名字即可 ——
+这是个测试工具，凭证由使用者输入，仓库里一个字节的密钥都没有。填过的值记在
+`user://relay.cfg`（在工程目录之外，不会被提交），下次自动带回来。
 
-```csharp
-EasyMulti.Init(new()
-{
-    Token     = "你的token",
-    GameId    = "chat-godot",
-    RelayHost = "你的服务器地址",
-    RelayPort = 7777,
-    Codec     = new MemoryPackCodec(),
-});
+> 换成你自己的游戏时，这些值通常来自你的构建配置。无论如何，**别把 token 提交进仓库**。
+> 配置写在哪、怎么注入，见 [USAGE.md](../../docs/USAGE.md)。
+
+自动化验收用的 `Autopilot.tscn` 走命令行传同样的东西：
+
+```bash
+godot --headless --path samples/ChatGodot res://Autopilot.tscn -- --role=host --relay-host=你的IP --token=你的token
+godot --headless --path samples/ChatGodot res://Autopilot.tscn -- --role=guest --code=<房码> --relay-host=你的IP --token=你的token
 ```
 
 ## SDK 是怎么进到这个工程里的
