@@ -17,6 +17,9 @@ using MemoryPack;
 // Then (two terminals):
 //   dotnet run --project examples/Echo -- --mode host   --name Host   --transport udp
 //   dotnet run --project examples/Echo -- --mode client --name Alice  --transport ws --room <CODE>
+//
+// 打远程中继（部署完之后拿它当冒烟测试，能连上就说明中继和防火墙都对）：
+//   dotnet run --project examples/Echo -- --mode host --name Probe --transport udp //       --relay-host 你的服务器IP --token 你的token
 
 return Run(args);
 
@@ -28,7 +31,7 @@ static int Run(string[] args)
     {
         Token     = opts.Token,
         GameId    = opts.Game,
-        RelayHost = "127.0.0.1",
+        RelayHost = opts.Host,
         RelayPort = opts.Port,
         Transport = opts.Transport == "ws" ? EasyMultiTransport.Ws : EasyMultiTransport.Udp,
         Codec     = new MemoryPackCodec(), // 默认壳：T 即消息通道，body 走 MemoryPack
@@ -63,7 +66,7 @@ static int Run(string[] args)
         me.Join(opts.Room); // 不用等连上，注册完成后自动补发
     }
 
-    Console.WriteLine($"[Echo] 连接中继 127.0.0.1:{opts.Port}（{opts.Transport}）");
+    Console.WriteLine($"[Echo] 连接中继 {opts.Host}:{opts.Port}（{opts.Transport}）");
 
     int ping = 0;
     var nextPing = DateTime.UtcNow;
@@ -99,6 +102,7 @@ internal static class Options
     public static Parsed Parse(string[] args)
     {
         string mode = "client", name = "Host", transport = "udp", room = "", token = "demo-token", game = "echo";
+        string host = "127.0.0.1";
         int port = 7777;
 
         for (int i = 0; i + 1 < args.Length; i += 2)
@@ -112,6 +116,7 @@ internal static class Options
                 case "--room": room = v; break;
                 case "--token": token = v; break;
                 case "--game": game = v; break;
+                case "--relay-host": host = v; break;
                 case "--relay-port": port = int.Parse(v); break;
                 default: throw new ArgumentException($"不认识的参数 {args[i]}");
             }
@@ -121,8 +126,8 @@ internal static class Options
         if (transport is not ("udp" or "ws")) throw new ArgumentException("--transport 必须是 udp 或 ws");
         if (mode == "client" && room.Length == 0) throw new ArgumentException("client 模式需要 --room <房码>");
 
-        return new Parsed(mode, name, transport, room, token, game, port);
+        return new Parsed(mode, name, transport, room, token, game, host, port);
     }
 
-    internal sealed record Parsed(string Mode, string Name, string Transport, string Room, string Token, string Game, int Port);
+    internal sealed record Parsed(string Mode, string Name, string Transport, string Room, string Token, string Game, string Host, int Port);
 }

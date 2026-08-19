@@ -118,13 +118,17 @@ godot --path samples/ChatGodot
 
 ### 3. 换成你自己的服务器
 
-改 [Net.cs](Net.cs) 顶部那四行，别的地方一个字都不用动：
+改 [Net.cs](Net.cs) 里那份配置，别的地方一个字都不用动：
 
 ```csharp
-private const string RelayHost  = "127.0.0.1";
-private const int    RelayPort  = 7777;
-private const string RelayToken = "demo-token";
-private const string GameId     = "chat-godot";
+EasyMulti.Init(new()
+{
+    Token     = "你的token",
+    GameId    = "chat-godot",
+    RelayHost = "你的服务器地址",
+    RelayPort = 7777,
+    Codec     = new MemoryPackCodec(),
+});
 ```
 
 ## SDK 是怎么进到这个工程里的

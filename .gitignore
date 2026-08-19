@@ -41,3 +41,6 @@ data_*/
 # locally generated TLS certs (serve.mjs / caddy dev)
 .local-*.pem
 .local-*.key
+
+# 本地笔记（可能含密钥，不要提交）
+*.local.md
