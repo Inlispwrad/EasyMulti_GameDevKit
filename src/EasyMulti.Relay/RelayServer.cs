@@ -112,7 +112,7 @@ public sealed class RelayServer
     {
         if (!IsValidToken(credentials.Token))
         {
-            Log($"连接被拒：token 无效（{address}）");
+            Log($"Connection refused: invalid token ({address})");
             Throttle(address);
             return "bad_token";
         }
@@ -166,7 +166,7 @@ public sealed class RelayServer
     {
         if (_peers.Count >= _config.MaxConnections)
         {
-            Log($"拒绝连接 {connection.Address}：达到最大连接数 {_config.MaxConnections}");
+            Log($"Connection refused: {connection.Address} — at capacity ({_config.MaxConnections})");
             Send(connection, new RegisterFailedMessage("server_full"));
             connection.Close("server_full");
             return;
@@ -197,7 +197,7 @@ public sealed class RelayServer
             return;
         }
 
-        string who = state.PlayerId ?? "（未注册）";
+        string who = state.PlayerId ?? "(unregistered)";
         if (state.Location == Loc.InRoom)
         {
             ReserveSeat(connection, state); // 掉线保留座位，等重连
@@ -787,7 +787,7 @@ public sealed class RelayServer
 
         if (!windowExpired && count == BadAuthLimit + 1)
         {
-            Log($"可疑流量：{key} 一分钟内 {count} 次错误 token");
+            Log($"Suspicious traffic: {key} sent {count} bad tokens within a minute");
         }
 
         // Entries are only ever added here, so prune here too — otherwise a scanner

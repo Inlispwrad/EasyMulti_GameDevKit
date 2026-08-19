@@ -31,11 +31,12 @@ Windows（PowerShell，系统自带的 5.1 就行）：
 ## 第 2 步：启动中继（传 token）
 
 **部署到服务器**：不用编译，也不用装 .NET —— 镜像由 CI 构建好放在 `ghcr.io`，服务器只要
-Docker。拿 `docker-compose.yml` + `Caddyfile` + `.env` 三个文件，token 填进 `.env`，然后：
+Docker。拿 `deploy/` 下的 `docker-compose.yml` + `Caddyfile` + `.env` 三个文件，token 填进 `.env`，然后：
 
     docker compose up -d
 
-完整步骤（域名、证书、防火墙、UDP 端口）见 [DEPLOY.md](DEPLOY.md)。跑起来之后重启自动拉起，**再也不用管它**。
+**没部署过服务器？** 看手把手教程 [setup/zh.md](setup/zh.md)（[EN](setup/en.md) · [JA](setup/ja.md)），
+从 SSH 讲起。参考手册见 [DEPLOY.md](DEPLOY.md)。跑起来之后重启自动拉起，**再也不用管它**。
 
 **本地开发 / 内网调试**，直接从源码跑更快：
 

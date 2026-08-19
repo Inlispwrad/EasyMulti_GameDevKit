@@ -2,6 +2,10 @@
 
 目标：部署一台中继，之后基本不用再管它。
 
+> **第一次部署、或者不熟悉服务器运维？** 先看手把手的[部署教程](setup/zh.md)
+> （[English](setup/en.md) · [日本語](setup/ja.md)）——从 SSH 连接、装 Docker 一路讲到防火墙和排错。
+> 本文是**参考手册**：配置项、各种部署形态、边界与取舍。
+
 ## 配置来源（优先级从低到高）
 
 1. JSON 配置文件（默认 `easyrelay.config.json`，可用 `--config <路径>` 指定）
@@ -20,7 +24,7 @@
 
 `--port N` 是便捷写法：同时把 WebSocket 与 UDP 都设为 N（TCP 与 UDP 是不同协议栈，可共用同一端口号）。
 
-示例配置见 `easyrelay.config.example.json`。
+示例配置见 [`deploy/easyrelay.config.example.json`](../deploy/easyrelay.config.example.json)。
 
 ## 裸机 / VPS
 
@@ -65,9 +69,9 @@ personal access token。中继镜像里没有任何机密，公开更省事。�
 
     mkdir easymulti && cd easymulti
     # 只要这三个文件，不用 clone 整个仓库
-    curl -O https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/docker-compose.yml
-    curl -O https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/Caddyfile
-    curl -o .env https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/.env.example
+    curl -O https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/deploy/docker-compose.yml
+    curl -O https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/deploy/Caddyfile
+    curl -o .env https://raw.githubusercontent.com/Inlispwrad/EasyMulti_GameDevKit/main/deploy/.env.example
 
     vi .env         # 填 token（openssl rand -hex 32）；在 dev 上迭代就把 EASYMULTI_TAG 改成 dev
     vi Caddyfile    # 换成你的域名（A 记录要先指到这台机器的公网 IP）

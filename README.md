@@ -53,7 +53,7 @@ docker run -d -p 7777:7777/tcp -p 7777:7777/udp -e EASYMULTI_TOKEN=your-secret e
 ```
 
 上面这条是本地 / 内网用的明文形态。**生产走 CI**：推代码 → GitHub Actions 跑测试并把镜像
-推到 `ghcr.io` → 服务器只拉，不编译。服务器上只要 `docker-compose.yml` + `Caddyfile` + `.env`
+推到 `ghcr.io` → 服务器只拉，不编译。服务器上只要 `deploy/` 里的 `docker-compose.yml` + `Caddyfile` + `.env`
 三个文件（中继 + Caddy 自动签证书），然后：
 
 ```bash
@@ -61,7 +61,9 @@ docker compose up -d              # 首次
 docker compose pull && docker compose up -d   # 以后每次更新
 ```
 
-完整步骤（含镜像可见性、域名、防火墙）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+**从零开始的手把手教程**（SSH → 装 Docker → 防火墙 → 排错）：
+[中文](docs/setup/zh.md) · [English](docs/setup/en.md) · [日本語](docs/setup/ja.md)。
+配置项与各种部署形态的参考手册见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 仓库结构
 
@@ -90,7 +92,8 @@ tests/
 | [docs/BENCHMARK.md](docs/BENCHMARK.md) | 延迟基准：UDP ~5ms、WS↔UDP ~10ms、WS↔WS ~17ms |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | 线协议：消息集合、字段语义、UDP 帧格式 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 设计：传输抽象、事件循环、可靠通道、互通为何免费 |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | 部署：配置来源、Docker / Compose、反向代理与 wss、云主机防火墙、安全边界 |
+| [docs/setup/](docs/setup/) | **手把手部署教程**（中文 / English / 日本語）：给没部署过服务器的人 |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | 部署参考：配置来源、Docker / Compose、反向代理与 wss、云主机防火墙、安全边界 |
 
 ## 你的代码长什么样
 

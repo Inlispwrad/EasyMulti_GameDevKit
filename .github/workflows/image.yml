@@ -10,6 +10,7 @@ name: image
 on:
   push:
     branches: [main, dev]
+    tags: ['v*']          # 打 v1.0.0 这种 tag 会额外产出带版本号的镜像
   workflow_dispatch:
 
 jobs:
@@ -52,11 +53,14 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.name.outputs.image }}
-          # 分支名一个 tag（dev / main），commit 短哈希一个（要回滚就指它），
+          # 分支名一个 tag（dev / main），commit 短哈希一个（要回滚就指它）；
+          # git tag v1.2.3 会额外出 1.2.3 和 1.2 —— 开源用户要钉死版本用这个。
           # latest 只跟默认分支走，免得 dev 上的东西被当成正式版拉下去。
           tags: |
             type=ref,event=branch
             type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - uses: docker/build-push-action@v6

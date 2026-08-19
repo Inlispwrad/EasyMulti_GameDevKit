@@ -89,7 +89,7 @@ public sealed class WebSocketTransport : IRelayTransport
                 if (prefixes.Length > 1)
                 {
                     Console.WriteLine(
-                        "[EasyMulti] 只绑到了本机回环。要收本机以外的连接，用管理员跑一次："
+                        "[EasyMulti] Bound to loopback only. To accept connections from other machines, run once as admin: "
                         + $"netsh http add urlacl url=http://+:{port}/ user=%USERNAME%");
                 }
 
@@ -98,12 +98,12 @@ public sealed class WebSocketTransport : IRelayTransport
             catch (HttpListenerException e)
             {
                 Console.Error.WriteLine(
-                    $"[EasyMulti] 绑定 {string.Join(" ", prefixes)} 失败（{e.Message}），换下一组");
+                    $"[EasyMulti] Could not bind {string.Join(" ", prefixes)} ({e.Message}); trying the next set");
                 listener.Close();
             }
         }
 
-        throw new InvalidOperationException($"端口 {port} 一个前缀都绑不上");
+        throw new InvalidOperationException($"Could not bind any prefix on port {port}");
     }
 
     private static async Task AcceptLoop(
@@ -159,14 +159,14 @@ public sealed class WebSocketTransport : IRelayTransport
         string address = context.Request.RemoteEndPoint?.ToString() ?? "unknown";
         if (!RelayHandshake.TryDecode(SubProtocols(context.Request), out RegisterRequest credentials))
         {
-            Console.Error.WriteLine($"[EasyMulti] 拒绝升级 {address}：没有可解析的凭证子协议");
+            Console.Error.WriteLine($"[EasyMulti] Upgrade refused for {address}: no readable credential sub-protocol");
             Refuse(context, HttpStatusCode.Unauthorized);
             return;
         }
 
         if (authenticate(credentials, address) is string refusal)
         {
-            Console.Error.WriteLine($"[EasyMulti] 拒绝升级 {address}：{refusal}");
+            Console.Error.WriteLine($"[EasyMulti] Upgrade refused for {address}: {refusal}");
             Refuse(context, HttpStatusCode.Unauthorized);
             return;
         }
@@ -178,7 +178,7 @@ public sealed class WebSocketTransport : IRelayTransport
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine("[EasyMulti] WebSocket 握手失败：" + e.Message);
+            Console.Error.WriteLine("[EasyMulti] WebSocket handshake failed: " + e.Message);
             context.Response.Abort();
             return;
         }
@@ -259,7 +259,7 @@ public sealed class WebSocketConnection : IRelayConnection
         _socket.Dispose();
         _enqueue(new RelayEvent(
             RelayEventKind.Disconnected, this, null, null,
-            _closeReason ?? "连接已关闭", DeliveryMode.Reliable));
+            _closeReason ?? "connection closed", DeliveryMode.Reliable));
     }
 
     private async Task PumpOutboxAsync()
@@ -281,7 +281,7 @@ public sealed class WebSocketConnection : IRelayConnection
         }
         catch (Exception e)
         {
-            _closeReason ??= "发送失败：" + e.Message;
+            _closeReason ??= "send failed: " + e.Message;
         }
     }
 
@@ -300,7 +300,7 @@ public sealed class WebSocketConnection : IRelayConnection
                         .ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        _closeReason ??= $"peer 发来 Close 帧（{result.CloseStatus} {result.CloseStatusDescription}）";
+                        _closeReason ??= $"peer sent a Close frame ({result.CloseStatus} {result.CloseStatusDescription})";
                         return;
                     }
 
@@ -325,7 +325,7 @@ public sealed class WebSocketConnection : IRelayConnection
         }
         catch (Exception e)
         {
-            _closeReason ??= "接收失败：" + e.Message;
+            _closeReason ??= "receive failed: " + e.Message;
         }
     }
 }

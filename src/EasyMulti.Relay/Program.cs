@@ -27,9 +27,9 @@ static int Run(string[] args)
         return 1;
     }
 
-    Console.WriteLine($"[EasyMulti] 启动：token={(config.Token.Length > 0 ? "已配置" : "缺失")}");
-    Console.WriteLine($"[EasyMulti] WebSocket: {(config.WebSocketEnabled ? $"端口 {config.WebSocketPort}" : "关闭")}");
-    Console.WriteLine($"[EasyMulti] UDP:        {(config.UdpEnabled ? $"端口 {config.UdpPort}" : "关闭")}");
+    Console.WriteLine($"[EasyMulti] Starting: token={(config.Token.Length > 0 ? "configured" : "MISSING")}");
+    Console.WriteLine($"[EasyMulti] WebSocket: {(config.WebSocketEnabled ? $"port {config.WebSocketPort}" : "disabled")}");
+    Console.WriteLine($"[EasyMulti] UDP:       {(config.UdpEnabled ? $"port {config.UdpPort}" : "disabled")}");
 
     var server = new RelayServer(config);
 
@@ -40,6 +40,6 @@ static int Run(string[] args)
     };
 
     server.Run();
-    Console.WriteLine("[EasyMulti] 已停止");
+    Console.WriteLine("[EasyMulti] Stopped");
     return 0;
 }

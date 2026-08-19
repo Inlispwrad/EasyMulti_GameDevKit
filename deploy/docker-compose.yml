@@ -1,8 +1,10 @@
 # EasyMulti 中继的生产形态：中继 + Caddy（终结 TLS，自动签证书）。
 #
-#   1. cp .env.example .env && 填一个真 token（openssl rand -hex 32）
+#   1. cp .env.example .env && 填一个真 token
 #   2. 把 Caddyfile 里的域名换成你的，并把域名 A 记录指到这台机器的公网 IP
 #   3. docker compose up -d
+#
+# 手把手的步骤（含 SSH、装 Docker、防火墙、排错）见 docs/setup/。
 #
 # 端口分工（两条腿不一样，见 docs/DEPLOY.md）：
 #   · WebSocket 只挂在内网，公网入口是 Caddy 的 443（wss://）。

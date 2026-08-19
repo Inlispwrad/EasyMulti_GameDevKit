@@ -44,7 +44,7 @@ public sealed class RelayConfig
             }
             catch (Exception e)
             {
-                throw new InvalidOperationException($"读配置 {configPath} 失败：{e.Message}");
+                throw new InvalidOperationException($"Failed to read config {configPath}: {e.Message}");
             }
         }
 
@@ -73,14 +73,15 @@ public sealed class RelayConfig
 
         if (!config.WebSocketEnabled && !config.UdpEnabled)
         {
-            throw new InvalidOperationException("至少启用一种传输（WebSocket 或 UDP）");
+            throw new InvalidOperationException("Enable at least one transport (WebSocket or UDP).");
         }
 
         if (string.IsNullOrWhiteSpace(config.Token))
         {
             throw new InvalidOperationException(
-                "缺少 token：请通过 easyrelay.config.json 的 token、环境变量 EASYMULTI_TOKEN 或 --token 提供。"
-                + "所有客户端必须携带同一个 token 才能连接。");
+                "Missing token. Provide one via the token field in easyrelay.config.json, "
+                + "the EASYMULTI_TOKEN environment variable, or --token. "
+                + "Every client must present the same token to connect.");
         }
 
         return config;
